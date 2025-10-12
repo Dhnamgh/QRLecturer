@@ -1,21 +1,58 @@
 import streamlit as st
 import json
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials  # ✅ dùng lib mới
 import qrcode
 from PIL import Image
 import io
 import time
+import random
+import string
+import urllib.parse
 
-# Cấu hình quyền truy cập Google Sheets
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
+# ========== CẤU HÌNH GOOGLE SHEETS ==========
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
-# Mở sheet theo ID thật
-sheet = client.open_by_key("1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz").worksheet("D25A")
+@st.cache_resource
+def _get_gspread_client():
+    # Lấy JSON từ st.secrets (có thể là str hoặc dict)
+    raw = st.secrets.get("GOOGLE_CREDENTIALS")
+    if raw is None:
+        raise RuntimeError("Thiếu GOOGLE_CREDENTIALS trong Secrets.")
 
+    creds_dict = raw if isinstance(raw, dict) else json.loads(raw)
+
+    # Fix trường hợp private_key bị double-escape: "\\n" -> "\n"
+    pk = creds_dict.get("private_key", "")
+    if "\\n" in pk:
+        creds_dict["private_key"] = pk.replace("\\n", "\n")
+
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    client = gspread.authorize(creds)
+    return client
+
+def get_sheet():
+    client = _get_gspread_client()
+    # Mở sheet theo ID & tab của bạn
+    ss = client.open_by_key("1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz")
+    return ss.worksheet("D25A")
+
+# ========== TIỆN ÍCH ==========
+def get_query_params():
+    # Streamlit mới: st.query_params; cũ: experimental_get_query_params
+    if hasattr(st, "query_params"):
+        return dict(st.query_params)
+    raw = st.experimental_get_query_params()
+    return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
+
+def generate_token(k=8):
+    import string, random
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=k))
+
+# ========== APP ==========
 st.set_page_config(page_title="QR Lecturer", layout="centered")
 st.title("📋 Hệ thống điểm danh QR")
 
@@ -23,14 +60,14 @@ tab1, tab2 = st.tabs(["👨‍🏫 Giảng viên", "🎓 Sinh viên"])
 
 with tab1:
     st.subheader("📸 Tạo mã QR điểm danh")
-
     buoi = st.selectbox("Chọn buổi học", ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"])
 
     if st.button("Tạo mã QR"):
         st.session_state["buoi"] = buoi
 
-        # Tạo link QR
-        qr_data = f"https://qrlecturer.streamlit.app/?buoi={buoi}"
+        # Tạo link QR (giữ nguyên logic của bạn)
+        # Khuyến nghị: thêm token/timestamp nếu cần TTL
+        qr_data = f"https://qrlecturer.streamlit.app/?buoi={urllib.parse.quote(buoi)}"
 
         # Tạo ảnh QR
         qr = qrcode.make(qr_data)
@@ -53,11 +90,13 @@ with tab1:
     if "buoi" in st.session_state:
         st.subheader("📊 Thống kê điểm danh")
         try:
+            sheet = get_sheet()
             col = sheet.find(st.session_state["buoi"]).col
             data = sheet.col_values(col)[1:]  # Bỏ header
-            diem_danh = sum(1 for x in data if x.strip())
+            diem_danh = sum(1 for x in data if str(x).strip())
             vang = len(data) - diem_danh
-            ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not x.strip()]  # Cột tên
+            # Giả định cột 3 là "Họ và Tên" như code cũ của bạn
+            ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not str(x).strip()]
 
             st.metric("✅ Đã điểm danh", diem_danh)
             st.metric("❌ Vắng mặt", vang)
@@ -71,10 +110,12 @@ with tab2:
 
     mssv = st.text_input("Nhập MSSV")
     hoten = st.text_input("Nhập họ tên")
-    buoi_sv = st.query_params.get("buoi", "Buổi 1")
+    qp = get_query_params()
+    buoi_sv = qp.get("buoi", "Buổi 1")
 
     if st.button("Điểm danh"):
         try:
+            sheet = get_sheet()
             cell = sheet.find(mssv)
             sheet.update_cell(cell.row, sheet.find(buoi_sv).col, "✅")
             st.success("🎉 Điểm danh thành công!")
