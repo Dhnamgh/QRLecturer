@@ -9,6 +9,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
 import json
+import io
 
 # ===================== CẤU HÌNH GOOGLE SHEET =====================
 def get_sheet():
@@ -76,7 +77,9 @@ with tab_gv:
 
     if st.button("🎯 Tạo mã QR động"):
         qr_img, token, timestamp = generate_qr_image(buoi)
-        st.image(qr_img, caption="Mã QR điểm danh (có hiệu lực trong 30 giây)")
+        buf = io.BytesIO()
+        qr_img.save(buf, format="PNG")
+        st.image(buf.getvalue(), caption="Mã QR điểm danh (có hiệu lực trong 30 giây)")
         st.session_state["token"] = token
         st.session_state["timestamp"] = timestamp
         st.session_state["buoi"] = buoi
