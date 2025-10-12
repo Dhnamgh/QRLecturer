@@ -85,15 +85,15 @@ with tab_gv:
         st.session_state["buoi"] = buoi
 
     if "buoi" in st.session_state:
-    st.subheader("📊 Thống kê điểm danh")
-    try:
-        stats = get_attendance_stats(st.session_state["buoi"])
-        st.metric("✅ Đã điểm danh", stats["diem_danh"])
-        st.metric("❌ Vắng mặt", stats["vang"])
-        st.write("📋 Danh sách vắng:")
-        st.dataframe(stats["ds_vang"])
-    except Exception as e:
-        st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+        st.subheader("📊 Thống kê điểm danh")
+        try:
+            stats = get_attendance_stats(st.session_state["buoi"])
+            st.metric("✅ Đã điểm danh", stats["diem_danh"])
+            st.metric("❌ Vắng mặt", stats["vang"])
+            st.write("📋 Danh sách vắng:")
+            st.dataframe(stats["ds_vang"])
+        except Exception as e:
+            st.error(f"❌ Lỗi khi lấy thống kê: {e}")
 
 # --------------------- SINH VIÊN ---------------------
 with tab_sv:
@@ -117,4 +117,5 @@ with tab_sv:
                 st.success(f"✅ Điểm danh thành công lúc {datetime.now().strftime('%H:%M:%S')}")
             else:
                 st.error("❌ MSSV hoặc họ tên không khớp với danh sách.")
+
 
