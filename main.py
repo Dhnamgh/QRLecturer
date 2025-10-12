@@ -108,7 +108,7 @@ with tab_gv:
 
         # Đếm ngược 30 giây (tuỳ chọn)
         countdown = st.empty()
-        for i in range(30, 0, -1):
+        for i in range(60, 0, -1):
             countdown.markdown(f"⏳ Thời gian còn lại: **{i} giây**")
             time.sleep(1)
         countdown.markdown("✅ Hết thời gian điểm danh")
@@ -152,3 +152,4 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
+
