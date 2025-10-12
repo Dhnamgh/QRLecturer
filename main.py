@@ -55,7 +55,9 @@ if student_only:
     st.title("🎓 Điểm danh sinh viên")
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
-    mssv = st.text_input("Nhập MSSV")
+    st.write("Mã số sinh viên: 51125", unsafe_allow_html=True)
+    mssv_tail = st.text_input("Nhập 3 số cuối MSSV")
+    mssv = "51125" + mssv_tail.strip()
     hoten = st.text_input("Nhập họ và tên")
 
     if st.button("✅ Xác nhận điểm danh"):
@@ -152,4 +154,5 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
+
 
