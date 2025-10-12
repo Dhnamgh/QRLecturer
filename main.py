@@ -11,7 +11,7 @@ import os
 import json
 
 # ===================== CẤU HÌNH GOOGLE SHEET =====================
-def get_sheet(buoi):
+def get_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
@@ -39,22 +39,25 @@ def is_token_valid(token, timestamp, expiry=30):
 
 # ===================== GHI ĐIỂM DANH =====================
 def mark_attendance(buoi, mssv, hoten):
-    sheet = get_sheet(buoi)
+    sheet = get_sheet()
     data = sheet.get_all_records()
+    col_diemdanh = sheet.find(buoi).col
+    col_thoigian = sheet.find(f"Thời gian {buoi[-1]}").col
+
     for i, row in enumerate(data):
         if str(row["MSSV"]) == str(mssv) and normalize_name(row["Họ và Tên"]) == hoten:
-            sheet.update_cell(i+2, sheet.find("Hiện diện").col, "Có")
-            sheet.update_cell(i+2, sheet.find("Thời gian").col, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            sheet.update_cell(i+2, col_diemdanh, "Có")
+            sheet.update_cell(i+2, col_thoigian, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             return True
     return False
 
 # ===================== THỐNG KÊ =====================
 def get_attendance_stats(buoi):
-    sheet = get_sheet(buoi)
+    sheet = get_sheet()
     data = sheet.get_all_records()
-    diem_danh = sum(1 for row in data if row["Hiện diện"] == "Có")
-    vang = sum(1 for row in data if row["Hiện diện"] != "Có")
-    ds_vang = [row for row in data if row["Hiện diện"] != "Có"]
+    diem_danh = sum(1 for row in data if row.get(buoi) == "Có")
+    vang = sum(1 for row in data if row.get(buoi) != "Có")
+    ds_vang = [row for row in data if row.get(buoi) != "Có"]
     return {
         "diem_danh": diem_danh,
         "vang": vang,
@@ -68,7 +71,8 @@ tab_gv, tab_sv = st.tabs(["👩‍🏫 Giảng viên", "📲 Sinh viên điểm 
 # --------------------- GIẢNG VIÊN ---------------------
 with tab_gv:
     st.header("🔐 Tạo mã QR điểm danh")
-    buoi = st.selectbox("Chọn buổi học", ["Buoi1", "Buoi2", "Buoi3", "Buoi4", "Buoi5", "Buoi6"])
+    buoi_hien_thi = st.selectbox("Chọn buổi học", ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"])
+    buoi = buoi_hien_thi  # dùng trực tiếp tên cột
 
     if st.button("🎯 Tạo mã QR động"):
         qr_img, token, timestamp = generate_qr_image(buoi)
