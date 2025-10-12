@@ -1,79 +1,58 @@
-import streamlit as st
-import qrcode
-from PIL import Image
-import time
-import io
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials  # thay cho oauth2client đã deprecated
+import streamlit as st
+import json
+import os
 
-# Kết nối Google Sheets
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["GOOGLE_CREDENTIALS"], scope)
-client = gspread.authorize(creds)
+SHEET_KEY = os.getenv("GSHEET_KEY", "1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz")
+WORKSHEET_NAME = os.getenv("GSHEET_TAB", "D25A")
 
-# Mở sheet
-sheet = client.open_by_key("YOUR_NEW_SHEET_ID").worksheet("D25A")  # Thay bằng ID mới sau khi lưu dưới dạng Google Sheets
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
-st.title("📋 Hệ thống điểm danh QR")
+@st.cache_resource
+def _get_gspread_client_safe():
+    # 1) Lấy credentials từ st.secrets hoặc env
+    raw = None
+    if "GOOGLE_CREDENTIALS" in st.secrets:
+        raw = st.secrets["GOOGLE_CREDENTIALS"]
+    elif os.getenv("GOOGLE_CREDENTIALS"):
+        raw = os.environ["GOOGLE_CREDENTIALS"]
+    else:
+        raise RuntimeError("Thiếu GOOGLE_CREDENTIALS (chưa cấu hình trong Secrets).")
 
-tab1, tab2 = st.tabs(["👨‍🏫 Giảng viên", "🎓 Sinh viên"])
+    if isinstance(raw, dict):
+        cred_dict = raw
+    else:
+        cred_dict = json.loads(raw)
 
-with tab1:
-    st.subheader("📸 Tạo mã QR điểm danh")
+    # 2) Tạo Credentials
+    creds = Credentials.from_service_account_info(cred_dict, scopes=SCOPES)
 
-    buoi = st.selectbox("Chọn buổi học", ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"])
+    # 3) Trả client
+    return gspread.authorize(creds), cred_dict.get("client_email", "")
 
-    if st.button("Tạo mã QR"):
-        st.session_state["buoi"] = buoi
-
-        # Tạo link QR
-        qr_data = f"https://qrlecturer.streamlit.app/?buoi={buoi}"
-
-        # Tạo ảnh QR
-        qr = qrcode.make(qr_data)
-        buf = io.BytesIO()
-        qr.save(buf)
-        buf.seek(0)
-        img = Image.open(buf)
-
-        st.image(img, caption="📱 Quét mã để điểm danh", width=250)
-        st.write(f"🔗 Link: {qr_data}")
-
-        # Đếm ngược 30 giây
-        countdown = st.empty()
-        for i in range(30, 0, -1):
-            countdown.markdown(f"⏳ Thời gian còn lại: **{i} giây**")
-            time.sleep(1)
-        countdown.markdown("✅ Hết thời gian điểm danh")
-
-    # Thống kê điểm danh
-    if "buoi" in st.session_state:
-        st.subheader("📊 Thống kê điểm danh")
+def get_sheet():
+    try:
+        client, svc_email = _get_gspread_client_safe()
+        ss = client.open_by_key(SHEET_KEY)
         try:
-            col = sheet.find(st.session_state["buoi"]).col
-            data = sheet.col_values(col)[1:]  # Bỏ header
-            diem_danh = sum(1 for x in data if x.strip())
-            vang = len(data) - diem_danh
-            ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not x.strip()]  # Cột tên
-
-            st.metric("✅ Đã điểm danh", diem_danh)
-            st.metric("❌ Vắng mặt", vang)
-            st.write("📋 Danh sách vắng:")
-            st.dataframe(ds_vang)
-        except Exception as e:
-            st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-
-with tab2:
-    st.subheader("📲 Nhập thông tin điểm danh")
-
-    mssv = st.text_input("Nhập MSSV")
-    hoten = st.text_input("Nhập họ tên")
-    buoi_sv = st.query_params.get("buoi", "Buổi 1")
-
-    if st.button("Điểm danh"):
-        try:
-            cell = sheet.find(mssv)
-            sheet.update_cell(cell.row, sheet.find(buoi_sv).col, "✅")
-            st.success("🎉 Điểm danh thành công!")
-        except Exception as e:
-            st.error(f"❌ Lỗi khi điểm danh: {e}")
+            return ss.worksheet(WORKSHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            raise RuntimeError(
+                f"Không tìm thấy worksheet '{WORKSHEET_NAME}'. Hãy kiểm tra tên tab trong file."
+            )
+    except gspread.exceptions.APIError as e:
+        # Gợi ý cụ thể những việc cần làm
+        raise RuntimeError(
+            "Không truy cập được Google Sheet. Kiểm tra các điểm sau:\n"
+            "• Hãy mở file Google Sheet và share quyền (Editor hoặc Viewer) cho service account email.\n"
+            "• Bật Google Sheets API và Google Drive API trong Google Cloud Console của project.\n"
+            "• Đảm bảo SHEET_KEY đúng.\n"
+            f"Service Account: {(_get_gspread_client_safe()[1] if 'svc_email' not in locals() else svc_email)}\n"
+            f"Lỗi gốc: {e}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"Lỗi cấu hình/credentials: {e}")
