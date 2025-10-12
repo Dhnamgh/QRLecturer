@@ -13,8 +13,8 @@ creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
-# Mở sheet theo ID mới (sau khi đã lưu dưới dạng Google Sheets)
-sheet = client.open_by_key("YOUR_NEW_SHEET_ID").worksheet("D25A")  # ← Thay bằng ID thật
+# Mở sheet theo ID thật
+sheet = client.open_by_key("1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz").worksheet("D25A")
 
 st.set_page_config(page_title="QR Lecturer", layout="centered")
 st.title("📋 Hệ thống điểm danh QR")
