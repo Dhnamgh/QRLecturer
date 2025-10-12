@@ -7,13 +7,16 @@ import time
 from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import os
+import json
 
 # ===================== CẤU HÌNH GOOGLE SHEET =====================
 def get_sheet(buoi):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open("DiemDanhHocPhan").worksheet(buoi)
+    sheet = client.open_by_key("1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz").worksheet("D25A")
     return sheet
 
 # ===================== CHUẨN HÓA HỌ TÊN =====================
@@ -39,7 +42,7 @@ def mark_attendance(buoi, mssv, hoten):
     sheet = get_sheet(buoi)
     data = sheet.get_all_records()
     for i, row in enumerate(data):
-        if str(row["MSSV"]) == str(mssv) and normalize_name(row["Họ và tên"]) == hoten:
+        if str(row["MSSV"]) == str(mssv) and normalize_name(row["Họ và Tên"]) == hoten:
             sheet.update_cell(i+2, sheet.find("Hiện diện").col, "Có")
             sheet.update_cell(i+2, sheet.find("Thời gian").col, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             return True
