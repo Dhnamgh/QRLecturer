@@ -19,8 +19,6 @@ WORKSHEET_NAME = "D25A"
 @st.cache_resource
 def _get_gspread_client():
     creds_dict = st.secrets["google_service_account"]
-    if "private_key" in creds_dict and "\\n" in creds_dict["private_key"]:
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
@@ -141,4 +139,5 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
+
 
