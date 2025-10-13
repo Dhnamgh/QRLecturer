@@ -18,10 +18,7 @@ WORKSHEET_NAME = "D25A"
 
 @st.cache_resource
 def _get_gspread_client():
-    raw = st.secrets.get("GOOGLE_CREDENTIALS")
-    if raw is None:
-        raise RuntimeError("Thiếu GOOGLE_CREDENTIALS trong Secrets.")
-    creds_dict = raw if isinstance(raw, dict) else json.loads(raw)
+    creds_dict = st.secrets["google_service_account"]
     if "private_key" in creds_dict and "\\n" in creds_dict["private_key"]:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -68,11 +65,8 @@ if student_only:
         else:
             try:
                 sheet = get_sheet()
-                # Tìm cột buổi
                 col_buoi = sheet.find(buoi_sv).col
-                # Tìm MSSV theo đúng dòng trong sheet
                 cell_mssv = sheet.find(str(mssv).strip())
-                # (khuyến nghị) kiểm tra họ tên khớp
                 hoten_sheet = sheet.cell(cell_mssv.row, sheet.find("Họ và Tên").col).value
                 if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                     st.error("Họ tên không khớp với MSSV trong danh sách.")
@@ -82,7 +76,6 @@ if student_only:
             except Exception as e:
                 st.error(f"❌ Lỗi khi điểm danh: {e}")
 
-    # Không render gì thêm trong chế độ SV
     st.stop()
 
 # ===================== MÀN HÌNH ĐẦY ĐỦ (GIẢNG VIÊN) =====================
@@ -95,10 +88,7 @@ with tab_gv:
 
     if st.button("Tạo mã QR"):
         st.session_state["buoi"] = buoi
-
-        # Tạo link QR: thêm sv=1 để ép vào chế độ SV khi mở trên điện thoại
         qr_data = f"https://qrlecturer.streamlit.app/?sv=1&buoi={urllib.parse.quote(buoi)}"
-
         qr = qrcode.make(qr_data)
         buf = io.BytesIO()
         qr.save(buf, format="PNG")
@@ -108,23 +98,20 @@ with tab_gv:
         st.image(img, caption="📱 Quét mã để điểm danh", width=250)
         st.write(f"🔗 Link: {qr_data}")
 
-        # Đếm ngược 30 giây (tuỳ chọn)
         countdown = st.empty()
         for i in range(60, 0, -1):
             countdown.markdown(f"⏳ Thời gian còn lại: **{i} giây**")
             time.sleep(1)
         countdown.markdown("✅ Hết thời gian điểm danh")
 
-    # Thống kê điểm danh
     if "buoi" in st.session_state:
         st.subheader("📊 Thống kê điểm danh")
         try:
             sheet = get_sheet()
             col = sheet.find(st.session_state["buoi"]).col
-            data = sheet.col_values(col)[1:]  # bỏ header
+            data = sheet.col_values(col)[1:]
             diem_danh = sum(1 for x in data if str(x).strip())
             vang = len(data) - diem_danh
-            # giả định cột 3 là "Họ và Tên"
             ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not str(x).strip()]
 
             c1, c2 = st.columns(2)
@@ -154,5 +141,3 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
-
-
