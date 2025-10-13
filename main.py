@@ -13,7 +13,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1sWG3jE8lDezfmGcEQgdRCRSBXxNjj9Xz"
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"
 WORKSHEET_NAME = "D25A"
 
 @st.cache_resource
@@ -53,7 +53,7 @@ if student_only:
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
     st.write("Mã số sinh viên: 51125", unsafe_allow_html=True)
-    mssv_tail = st.text_input("Nhập 3 số cuối MSSV")
+    mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
     mssv = "51125" + mssv_tail.strip()
     hoten = st.text_input("Nhập họ và tên")
 
@@ -141,3 +141,4 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
+
