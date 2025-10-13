@@ -14,23 +14,24 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- thay ID thật của bạn
-WORKSHEET_NAME = "D25A"
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- thay bằng ID thật của Google Sheet
+WORKSHEET_NAME = "D25A"  # <-- thay bằng tên sheet thật
 
 @st.cache_resource
 def _get_gspread_client():
     """
-    Kết nối Google Sheets và tự động 'sửa' các lỗi thường gặp của private_key:
-    - secrets lưu 1 dòng với \\n
-    - base64 bị quấn dòng, thiếu '=' padding
-    - khoảng trắng/ký tự lạ
+    Kết nối Google Sheets và tự động 'sửa khóa' nếu định dạng private_key bị lỗi:
+    - \\n vs \n
+    - khoảng trắng hoặc ký tự lạ
+    - '=' padding sai ('Incorrect padding', 'Excess data after padding', v.v.)
     """
     cred = dict(st.secrets["google_service_account"])
+
     pk = cred.get("private_key", "")
     if not pk:
         raise RuntimeError("Secrets thiếu 'private_key'.")
 
-    # 1️⃣ Thay \\n -> \n, chuẩn hóa dòng
+    # 1️⃣ Chuẩn hóa xuống dòng
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
     pk = pk.replace("\r\n", "\n").replace("\r", "\n")
@@ -41,7 +42,7 @@ def _get_gspread_client():
     if header not in pk or footer not in pk:
         raise RuntimeError("private_key thiếu header/footer BEGIN/END PRIVATE KEY.")
 
-    # 2️⃣ Lấy thân base64
+    # 2️⃣ Lấy thân base64 giữa header/footer
     lines = [ln.strip() for ln in pk.split("\n")]
     try:
         h_idx = lines.index(header)
@@ -50,43 +51,46 @@ def _get_gspread_client():
         raise RuntimeError("Định dạng private_key không hợp lệ (không tìm thấy header/footer).")
 
     body_lines = [ln for ln in lines[h_idx + 1 : f_idx] if ln]
-    body_raw = "".join(body_lines)
-    body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", body_raw)  # loại ký tự lạ
+    body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", "".join(body_lines))
 
-    # 3️⃣ Bổ sung padding
-    rem = len(body_raw) % 4
+    # 3️⃣ Bỏ toàn bộ '=' trong thân rồi thêm padding mới
+    body_str = body_raw.replace("=", "")
+    if not body_str:
+        raise RuntimeError("private_key base64 rỗng sau khi làm sạch.")
+
+    rem = len(body_str) % 4
     if rem != 0:
-        body_raw += "=" * (4 - rem)
+        body_str += "=" * (4 - rem)
 
-    # 4️⃣ Thử decode base64 (kiểm tra lỗi Short substrate / Incorrect padding)
+    # 4️⃣ Thử decode base64 để xác nhận hợp lệ
     try:
-        base64.b64decode(body_raw, validate=True)
+        base64.b64decode(body_str, validate=True)
     except Exception as e:
         svc = cred.get("client_email", "(không lấy được)")
         raise RuntimeError(
-            f"❌ private_key trong secrets bị hỏng hoặc thiếu ký tự.\n"
-            f"Hãy tạo key JSON mới và copy nguyên văn (không thêm ...).\n"
+            "❌ private_key trong secrets bị hỏng hoặc thiếu ký tự.\n"
+            "Hãy tạo key JSON mới và copy nguyên văn (không thêm ...).\n"
             f"Service Account: {svc}\nLỗi gốc: {e}"
         )
 
-    # 5️⃣ Gộp lại PEM chuẩn
+    # 5️⃣ Reflow lại PEM: 64 ký tự mỗi dòng
     pk_clean = header + "\n"
-    for i in range(0, len(body_raw), 64):
-        pk_clean += body_raw[i : i + 64] + "\n"
+    for i in range(0, len(body_str), 64):
+        pk_clean += body_str[i : i + 64] + "\n"
     pk_clean += footer + "\n"
 
     cred["private_key"] = pk_clean
 
-    # 6️⃣ Tạo credentials
+    # 6️⃣ Tạo credentials và trả về client
     creds = Credentials.from_service_account_info(cred, scopes=SCOPES)
     return gspread.authorize(creds)
 
 
 def get_sheet():
+    """Mở sheet cần làm việc"""
     client = _get_gspread_client()
     ss = client.open_by_key(SHEET_KEY)
     return ss.worksheet(WORKSHEET_NAME)
-
 
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
@@ -97,11 +101,9 @@ def get_query_params():
         raw = st.experimental_get_query_params()
         return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
 
-
 def normalize_name(name: str):
     """Chuẩn hóa họ tên"""
     return " ".join(w.capitalize() for w in name.strip().split())
-
 
 # ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="centered")
@@ -110,7 +112,7 @@ qp = get_query_params()
 # Nếu URL có sv=1 hoặc buoi=... thì chỉ hiển thị form SV
 student_only = (qp.get("sv") == "1") or ("buoi" in qp)
 
-# ===================== MÀN HÌNH CHỈ SINH VIÊN =====================
+# ===================== MÀN HÌNH SINH VIÊN =====================
 if student_only:
     buoi_sv = qp.get("buoi", "Buổi 1")
     st.title("🎓 Điểm danh sinh viên")
@@ -169,7 +171,7 @@ with tab_gv:
         st.write(f"🔗 Link: {qr_data}")
 
         countdown = st.empty()
-        for i in range(60, 0, -1):  # 1 phút
+        for i in range(60, 0, -1):  # hiệu lực 1 phút
             countdown.markdown(f"⏳ Thời gian còn lại: **{i} giây**")
             time.sleep(1)
         countdown.markdown("✅ Hết thời gian điểm danh")
@@ -180,7 +182,7 @@ with tab_gv:
         try:
             sheet = get_sheet()
             col = sheet.find(st.session_state["buoi"]).col
-            data = sheet.col_values(col)[1:]  # bỏ header
+            data = sheet.col_values(col)[1:]
             diem_danh = sum(1 for x in data if str(x).strip())
             vang = len(data) - diem_danh
             ds_vang = [
