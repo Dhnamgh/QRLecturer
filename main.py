@@ -40,9 +40,15 @@ def get_sheet():
 
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
-    """Đọc query string từ URL (dùng cho SV quét QR)"""
-    raw = st.experimental_get_query_params()
-    return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
+    """Lấy query params, tương thích cả bản Streamlit mới và cũ"""
+    if hasattr(st, "query_params"):
+        # Streamlit 1.35+ (ổn định)
+        qp = st.query_params
+        return dict(qp)
+    else:
+        # Bản cũ fallback
+        raw = st.experimental_get_query_params()
+        return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
 
 def normalize_name(name: str):
     """Chuẩn hóa họ tên: viết hoa chữ cái đầu"""
