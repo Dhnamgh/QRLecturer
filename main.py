@@ -6,6 +6,8 @@ from PIL import Image
 import io
 import time
 import urllib.parse
+import re
+import base64
 
 # ===================== CẤU HÌNH GOOGLE SHEETS =====================
 SCOPES = [
@@ -17,44 +19,91 @@ WORKSHEET_NAME = "D25A"
 
 @st.cache_resource
 def _get_gspread_client():
-    """Kết nối Google Sheets bằng service account từ secrets"""
-    cred = dict(st.secrets["google_service_account"])  # đọc từ [google_service_account] trong secrets.toml
-
+    """
+    Kết nối Google Sheets và tự động 'sửa' các lỗi thường gặp của private_key:
+    - secrets lưu 1 dòng với \\n
+    - base64 bị quấn dòng, thiếu '=' padding
+    - khoảng trắng/ký tự lạ
+    """
+    cred = dict(st.secrets["google_service_account"])
     pk = cred.get("private_key", "")
     if not pk:
-        raise RuntimeError("Secrets thiếu private_key.")
+        raise RuntimeError("Secrets thiếu 'private_key'.")
 
-    # Secrets có dạng \\n → đổi thành newline thật
+    # 1️⃣ Thay \\n -> \n, chuẩn hóa dòng
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
+    pk = pk.replace("\r\n", "\n").replace("\r", "\n")
 
-    cred["private_key"] = pk
+    header = "-----BEGIN PRIVATE KEY-----"
+    footer = "-----END PRIVATE KEY-----"
 
+    if header not in pk or footer not in pk:
+        raise RuntimeError("private_key thiếu header/footer BEGIN/END PRIVATE KEY.")
+
+    # 2️⃣ Lấy thân base64
+    lines = [ln.strip() for ln in pk.split("\n")]
+    try:
+        h_idx = lines.index(header)
+        f_idx = lines.index(footer)
+    except ValueError:
+        raise RuntimeError("Định dạng private_key không hợp lệ (không tìm thấy header/footer).")
+
+    body_lines = [ln for ln in lines[h_idx + 1 : f_idx] if ln]
+    body_raw = "".join(body_lines)
+    body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", body_raw)  # loại ký tự lạ
+
+    # 3️⃣ Bổ sung padding
+    rem = len(body_raw) % 4
+    if rem != 0:
+        body_raw += "=" * (4 - rem)
+
+    # 4️⃣ Thử decode base64 (kiểm tra lỗi Short substrate / Incorrect padding)
+    try:
+        base64.b64decode(body_raw, validate=True)
+    except Exception as e:
+        svc = cred.get("client_email", "(không lấy được)")
+        raise RuntimeError(
+            f"❌ private_key trong secrets bị hỏng hoặc thiếu ký tự.\n"
+            f"Hãy tạo key JSON mới và copy nguyên văn (không thêm ...).\n"
+            f"Service Account: {svc}\nLỗi gốc: {e}"
+        )
+
+    # 5️⃣ Gộp lại PEM chuẩn
+    pk_clean = header + "\n"
+    for i in range(0, len(body_raw), 64):
+        pk_clean += body_raw[i : i + 64] + "\n"
+    pk_clean += footer + "\n"
+
+    cred["private_key"] = pk_clean
+
+    # 6️⃣ Tạo credentials
     creds = Credentials.from_service_account_info(cred, scopes=SCOPES)
     return gspread.authorize(creds)
+
 
 def get_sheet():
     client = _get_gspread_client()
     ss = client.open_by_key(SHEET_KEY)
     return ss.worksheet(WORKSHEET_NAME)
 
+
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
-    """Lấy query params, tương thích cả bản Streamlit mới và cũ"""
+    """Lấy query params, tương thích bản Streamlit mới"""
     if hasattr(st, "query_params"):
-        # Streamlit 1.35+ (ổn định)
-        qp = st.query_params
-        return dict(qp)
+        return dict(st.query_params)
     else:
-        # Bản cũ fallback
         raw = st.experimental_get_query_params()
         return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
 
-def normalize_name(name: str):
-    """Chuẩn hóa họ tên: viết hoa chữ cái đầu"""
-    return ' '.join(w.capitalize() for w in name.strip().split())
 
-# ===================== CẤU HÌNH GIAO DIỆN =====================
+def normalize_name(name: str):
+    """Chuẩn hóa họ tên"""
+    return " ".join(w.capitalize() for w in name.strip().split())
+
+
+# ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="centered")
 qp = get_query_params()
 
@@ -91,7 +140,7 @@ if student_only:
             except Exception as e:
                 st.error(f"❌ Lỗi khi điểm danh: {e}")
 
-    st.stop()  # chỉ hiển thị phần sinh viên, không hiển thị phần giảng viên
+    st.stop()
 
 # ===================== MÀN HÌNH GIẢNG VIÊN =====================
 st.title("📋 Hệ thống điểm danh QR")
@@ -101,7 +150,10 @@ tab_gv, tab_sv = st.tabs(["👨‍🏫 Giảng viên", "🎓 Sinh viên"])
 # ---------- TAB GIẢNG VIÊN ----------
 with tab_gv:
     st.subheader("📸 Tạo mã QR điểm danh")
-    buoi = st.selectbox("Chọn buổi học", ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"])
+    buoi = st.selectbox(
+        "Chọn buổi học",
+        ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
+    )
 
     if st.button("Tạo mã QR"):
         st.session_state["buoi"] = buoi
@@ -131,11 +183,17 @@ with tab_gv:
             data = sheet.col_values(col)[1:]  # bỏ header
             diem_danh = sum(1 for x in data if str(x).strip())
             vang = len(data) - diem_danh
-            ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not str(x).strip()]
+            ds_vang = [
+                sheet.cell(i + 2, 3).value
+                for i, x in enumerate(data)
+                if not str(x).strip()
+            ]
 
             c1, c2 = st.columns(2)
-            with c1: st.metric("✅ Đã điểm danh", diem_danh)
-            with c2: st.metric("❌ Vắng mặt", vang)
+            with c1:
+                st.metric("✅ Đã điểm danh", diem_danh)
+            with c2:
+                st.metric("❌ Vắng mặt", vang)
             st.write("📋 Danh sách vắng:")
             st.dataframe(ds_vang)
         except Exception as e:
@@ -153,7 +211,9 @@ with tab_sv:
             sheet = get_sheet()
             col_buoi = sheet.find(buoi_sv).col
             cell_mssv = sheet.find(str(mssv).strip())
-            hoten_sheet = sheet.cell(cell_mssv.row, sheet.find("Họ và Tên").col).value
+            hoten_sheet = sheet.cell(
+                cell_mssv.row, sheet.find("Họ và Tên").col
+            ).value
             if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                 st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
             else:
