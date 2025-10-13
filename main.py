@@ -1,5 +1,4 @@
 import streamlit as st
-import json
 import gspread
 from google.oauth2.service_account import Credentials
 import qrcode
@@ -29,8 +28,6 @@ def get_sheet():
 
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
-    if hasattr(st, "query_params"):
-        return dict(st.query_params)
     raw = st.experimental_get_query_params()
     return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
 
@@ -41,10 +38,9 @@ def normalize_name(name: str):
 st.set_page_config(page_title="QR Lecturer", layout="centered")
 qp = get_query_params()
 
-# Điều kiện kích hoạt "chế độ chỉ SV": có sv=1 hoặc có buoi trong URL
 student_only = (qp.get("sv") == "1") or ("buoi" in qp)
 
-# ===================== MÀN HÌNH CHỈ SV (khi quét QR) =====================
+# ===================== MÀN HÌNH CHỈ SV =====================
 if student_only:
     buoi_sv = qp.get("buoi", "Buổi 1")
     st.title("🎓 Điểm danh sinh viên")
@@ -76,7 +72,7 @@ if student_only:
 
     st.stop()
 
-# ===================== MÀN HÌNH ĐẦY ĐỦ (GIẢNG VIÊN) =====================
+# ===================== MÀN HÌNH GIẢNG VIÊN =====================
 st.title("📋 Hệ thống điểm danh QR")
 tab_gv, tab_sv = st.tabs(["👨‍🏫 Giảng viên", "🎓 Sinh viên"])
 
@@ -139,5 +135,3 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
-
-
