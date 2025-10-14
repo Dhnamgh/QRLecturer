@@ -1,8 +1,6 @@
 # 📲 Ứng dụng điểm danh sinh viên bằng Streamlit
 
-Ứng dụng này cho phép giảng viên tạo mã QR động cho từng buổi học, sinh viên quét mã để điểm danh, và hệ thống ghi nhận dữ liệu vào Google Sheets. Giao diện đơn giản, dễ dùng trên cả máy tính và điện thoại.
-
----
+Ứng dụng này cho phép giảng viên tạo mã QR động cho từng buổi học, sinh viên quét mã để điểm danh, và hệ thống ghi nhận dữ liệu vào Google Sheets. 
 
 ## 🚀 Tính năng chính
 
