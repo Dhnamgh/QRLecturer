@@ -10,7 +10,7 @@ import re
 import base64
 import unicodedata
 from difflib import get_close_matches
-import datetime  # dùng module chuẩn để tránh bị shadow
+import datetime               # dùng module chuẩn để tránh shadow
 import pandas as pd
 import altair as alt
 
@@ -19,19 +19,52 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # ID file Google Sheets
-WORKSHEET_NAME = "D25C"  # Tên worksheet trong file Google Sheets
-VN_TZ = datetime.timezone(datetime.timedelta(hours=7))  # múi giờ Việt Nam
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # đổi nếu cần
+WORKSHEET_NAME = "D25A"
+VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
-# ===================== CHUẨN HÓA PRIVATE KEY & KẾT NỐI =====================
+# ===================== PAGE CONFIG =====================
+st.set_page_config(page_title="QR Lecturer", layout="wide")
+
+# ===================== GUARD: PHẢI CÓ SECRETS MỚI CHẠY =====================
+missing = []
+if "teacher_password" not in st.secrets:
+    missing.append("teacher_password")
+if "google_service_account" not in st.secrets:
+    missing.append("[google_service_account]")
+
+if missing:
+    st.error(
+        "🔒 App bị khóa vì thiếu Secrets: "
+        + ", ".join(missing)
+        + ". Vào Settings → Secrets để cấu hình rồi reload."
+    )
+    st.stop()
+
+# (Tuỳ chọn) hiện chẩn đoán keys – có thể xoá khi xong
+# with st.sidebar:
+#     st.caption(f"Secrets keys: {list(st.secrets.keys())}")
+
+# ===================== FINGERPRINT SECRETS (VÔ HIỆU CACHE KHI SECRETS ĐỔI) =====================
+def _secrets_fingerprint() -> str:
+    try:
+        svc = st.secrets["google_service_account"]
+        return f"{svc.get('client_email','')}/{svc.get('private_key_id','')}/{len(svc.get('private_key',''))}"
+    except Exception:
+        return "missing"
+
+# ===================== CHUẨN HÓA PRIVATE KEY & KẾT NỐI (CÓ FINGERPRINT) =====================
 @st.cache_resource
-def _get_gspread_client():
+def _get_gspread_client(_fp: str):
+    """
+    _fp chỉ dùng để làm 'salt' cho cache. Mỗi khi secrets đổi, _fp đổi → cache mất hiệu lực.
+    """
     cred = dict(st.secrets["google_service_account"])
     pk = cred.get("private_key", "")
     if not pk:
         raise RuntimeError("Secrets thiếu private_key.")
 
-    # 1) Chuẩn hoá xuống dòng
+    # Chuẩn hoá xuống dòng
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
     pk = pk.replace("\r\n", "\n").replace("\r", "\n")
@@ -41,13 +74,10 @@ def _get_gspread_client():
     if header not in pk or footer not in pk:
         raise RuntimeError("private_key thiếu header/footer BEGIN/END.")
 
-    # 2) Làm sạch base64 và chuẩn padding
+    # Làm sạch base64 và chuẩn padding
     lines = [ln.strip() for ln in pk.split("\n")]
-    try:
-        h_idx = lines.index(header)
-        f_idx = lines.index(footer)
-    except ValueError:
-        raise RuntimeError("Định dạng private_key không hợp lệ.")
+    h_idx = lines.index(header)
+    f_idx = lines.index(footer)
     body_lines = [ln for ln in lines[h_idx + 1:f_idx] if ln]
     body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", "".join(body_lines))
 
@@ -57,13 +87,9 @@ def _get_gspread_client():
     rem = len(body) % 4
     if rem:
         body += "=" * (4 - rem)
-    try:
-        base64.b64decode(body, validate=True)
-    except Exception as e:
-        svc = cred.get("client_email", "(không rõ)")
-        raise RuntimeError(f"❌ private_key lỗi base64: {e}\nService Account: {svc}")
+    base64.b64decode(body, validate=True)
 
-    # 3) Ghép lại PEM chuẩn
+    # Ghép lại PEM chuẩn
     pk_clean = (
         header + "\n" +
         "\n".join(body[i:i + 64] for i in range(0, len(body), 64)) +
@@ -75,9 +101,10 @@ def _get_gspread_client():
     return gspread.authorize(creds)
 
 def get_sheet():
-    client = _get_gspread_client()
+    client = _get_gspread_client(_secrets_fingerprint())
     ss = client.open_by_key(SHEET_KEY)
     return ss.worksheet(WORKSHEET_NAME)
+
 
 # ===================== TIỆN ÍCH & TÌM KIẾM =====================
 def get_query_params():
@@ -185,6 +212,18 @@ def render_gv_auth():
 
 # ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="wide")
+# --- Guard: buộc phải có secrets thì mới chạy ---
+missing = []
+if "teacher_password" not in st.secrets:
+    missing.append("teacher_password")
+if "google_service_account" not in st.secrets:
+    missing.append("[google_service_account]")
+
+if missing:
+    st.error("🔒 App bị khóa vì thiếu Secrets: " + ", ".join(missing)
+             + ". Vào Settings → Secrets để cấu hình rồi reload.")
+    st.stop()
+
 qp = get_query_params()
 
 # KHÔNG phải SV vào bằng QR thì hiển thị form đăng nhập GV
@@ -456,3 +495,4 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
