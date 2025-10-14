@@ -220,10 +220,13 @@ with tab_gv:
                 # Chỉ hiển thị link nếu bật show_link (dùng code/textarea để dễ copy)
                 if show_link:
                     with link_slot.container():
-                        st.code(qr_data)  # có nút copy sẵn, KHÔNG phải widget nên không sinh lỗi trùng ID
+                        st.markdown(
+                            f'<a href="{qr_data}" target="_blank" rel="noopener noreferrer">🌐 Mở link hiện tại</a>',
+                            unsafe_allow_html=True
+                        )
+                        st.code(qr_data)  # thêm ô copy cho tiện
                 else:
-                   link_slot.empty()
-
+                    link_slot.empty()
 
                 # Đồng hồ đếm ngược
                 remain = 30 - (now % 30)
@@ -317,6 +320,7 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
 
 
