@@ -476,7 +476,7 @@ with tab_ai:
 
     user_q = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi ở đây...")
 
-    if st.button("Hỏi trợ lý", use_container_width=True) and user_q.strip():
+    if st.button("Hỏi trợ lý AI", use_container_width=True) and user_q.strip():
         try:
             sheet = get_sheet()
             records = load_records(sheet)
@@ -571,6 +571,7 @@ with tab_ai:
 
         except Exception as e:
             st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
+
 
 
 
