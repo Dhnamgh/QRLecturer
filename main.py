@@ -10,61 +10,24 @@ import re
 import base64
 import unicodedata
 from difflib import get_close_matches
-import datetime               # dùng module chuẩn để tránh shadow
-import pandas as pd
-import altair as alt
 
 # ===================== CẤU HÌNH GOOGLE SHEETS =====================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # đổi nếu cần
-WORKSHEET_NAME = "D25A"
-VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # ID file Sheet của bạn
+WORKSHEET_NAME = "D25C"  # Tên sheet con trong Google Sheets
 
-# ===================== PAGE CONFIG =====================
-st.set_page_config(page_title="QR Lecturer", layout="wide")
-
-# ===================== GUARD: PHẢI CÓ SECRETS MỚI CHẠY =====================
-missing = []
-if "teacher_password" not in st.secrets:
-    missing.append("teacher_password")
-if "google_service_account" not in st.secrets:
-    missing.append("[google_service_account]")
-
-if missing:
-    st.error(
-        "🔒 App bị khóa vì thiếu Secrets: "
-        + ", ".join(missing)
-        + ". Vào Settings → Secrets để cấu hình rồi reload."
-    )
-    st.stop()
-
-# (Tuỳ chọn) hiện chẩn đoán keys – có thể xoá khi xong
-# with st.sidebar:
-#     st.caption(f"Secrets keys: {list(st.secrets.keys())}")
-
-# ===================== FINGERPRINT SECRETS (VÔ HIỆU CACHE KHI SECRETS ĐỔI) =====================
-def _secrets_fingerprint() -> str:
-    try:
-        svc = st.secrets["google_service_account"]
-        return f"{svc.get('client_email','')}/{svc.get('private_key_id','')}/{len(svc.get('private_key',''))}"
-    except Exception:
-        return "missing"
-
-# ===================== CHUẨN HÓA PRIVATE KEY & KẾT NỐI (CÓ FINGERPRINT) =====================
+# ===================== HÀM CHUẨN HÓA PRIVATE KEY & KẾT NỐI =====================
 @st.cache_resource
-def _get_gspread_client(_fp: str):
-    """
-    _fp chỉ dùng để làm 'salt' cho cache. Mỗi khi secrets đổi, _fp đổi → cache mất hiệu lực.
-    """
+def _get_gspread_client():
     cred = dict(st.secrets["google_service_account"])
     pk = cred.get("private_key", "")
     if not pk:
         raise RuntimeError("Secrets thiếu private_key.")
 
-    # Chuẩn hoá xuống dòng
+    # 1. Chuẩn hóa xuống dòng
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
     pk = pk.replace("\r\n", "\n").replace("\r", "\n")
@@ -74,64 +37,80 @@ def _get_gspread_client(_fp: str):
     if header not in pk or footer not in pk:
         raise RuntimeError("private_key thiếu header/footer BEGIN/END.")
 
-    # Làm sạch base64 và chuẩn padding
+    # 2. Lọc ký tự hợp lệ
     lines = [ln.strip() for ln in pk.split("\n")]
-    h_idx = lines.index(header)
-    f_idx = lines.index(footer)
+    try:
+        h_idx = lines.index(header)
+        f_idx = lines.index(footer)
+    except ValueError:
+        raise RuntimeError("Định dạng private_key không hợp lệ.")
     body_lines = [ln for ln in lines[h_idx + 1:f_idx] if ln]
     body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", "".join(body_lines))
 
+    # 3. Chuẩn hóa padding base64
     body = body_raw.replace("=", "")
     if not body:
         raise RuntimeError("private_key rỗng sau khi làm sạch.")
     rem = len(body) % 4
     if rem:
         body += "=" * (4 - rem)
-    base64.b64decode(body, validate=True)
+    try:
+        base64.b64decode(body, validate=True)
+    except Exception as e:
+        svc = cred.get("client_email", "(không rõ)")
+        raise RuntimeError(
+            f"❌ private_key lỗi base64: {e}\nService Account: {svc}"
+        )
 
-    # Ghép lại PEM chuẩn
+    # 4. Ghép lại PEM chuẩn
     pk_clean = (
-        header + "\n" +
-        "\n".join(body[i:i + 64] for i in range(0, len(body), 64)) +
-        "\n" + footer + "\n"
+        header
+        + "\n"
+        + "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        + "\n"
+        + footer
+        + "\n"
     )
     cred["private_key"] = pk_clean
 
     creds = Credentials.from_service_account_info(cred, scopes=SCOPES)
     return gspread.authorize(creds)
 
+
 def get_sheet():
-    client = _get_gspread_client(_secrets_fingerprint())
+    client = _get_gspread_client()
     ss = client.open_by_key(SHEET_KEY)
     return ss.worksheet(WORKSHEET_NAME)
 
-
-# ===================== TIỆN ÍCH & TÌM KIẾM =====================
+# ===================== TIỆN ÍCH =====================
 def get_query_params():
     if hasattr(st, "query_params"):
         return dict(st.query_params)
     raw = st.experimental_get_query_params()
     return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
 
+
 def normalize_name(name: str):
     return " ".join(w.capitalize() for w in name.strip().split())
 
+
 def strip_accents(s: str) -> str:
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(ch for ch in s if unicodedata.category(s_char) != "Mn" for s_char in [s])
-    # Oops above; fix strip properly:
     s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     return unicodedata.normalize("NFC", s)
 
+
 def norm_search(s: str) -> str:
     return " ".join(strip_accents(s).lower().split())
+
 
 def load_records(sheet):
     return sheet.get_all_records(expected_headers=None, default_blank="")
 
+
 def find_header_col(sheet, header_name):
     return sheet.find(header_name).col
+
 
 def find_student_candidates(records, query: str):
     q = query.strip()
@@ -153,98 +132,20 @@ def find_student_candidates(records, query: str):
         close = [name_map_no[c] for c in close_no]
     return [name_map[n] for n in close]
 
+
 def attendance_flag(val):
     return str(val).strip() != ""
 
-# ===================== GHI THỜI GIAN CẠNH CỘT BUỔI =====================
-def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
-    """
-    Trả về index cột 'Thời gian' tương ứng với cột buổi:
-    - Ưu tiên cột ngay bên phải nếu tiêu đề chứa 'thời gian' hoặc 'time'.
-    - Nếu không, dò theo số buổi (VD: 'Buổi 3' -> 'Thời gian 3') ở bất kỳ vị trí nào.
-    - Nếu vẫn không thấy, đặt tiêu đề 'Thời gian {buoi_header}' ở cột bên phải và dùng cột đó.
-    """
-    headers = sheet.row_values(1)
-    n_cols = len(headers)
-
-    # 1) Cột ngay bên phải
-    next_col = buoi_col + 1
-    if next_col <= n_cols:
-        next_header = headers[next_col - 1] or ""
-        if ("thời gian" in next_header.lower()) or ("time" in next_header.lower()):
-            return next_col
-
-    # 2) Dò theo số buổi (Buổi 1/2/3 => Thời gian 1/2/3)
-    m = re.search(r"(\d+)", buoi_header or "", flags=re.I)
-    buoi_idx = m.group(1) if m else None
-    if buoi_idx:
-        for idx, h in enumerate(headers, start=1):
-            hlow = (h or "").lower()
-            if (("thời gian" in hlow) or ("time" in hlow)) and re.search(rf"\b{buoi_idx}\b", hlow):
-                return idx
-
-    # 3) Không thấy -> đặt tiêu đề ở cột ngay phải
-    sheet.update_cell(1, next_col, f"Thời gian {buoi_header}")
-    return next_col
-
-# ===================== AUTH GIẢNG VIÊN =====================
-def gv_unlocked() -> bool:
-    return bool(st.session_state.get("gv_unlocked"))
-
-def render_gv_auth():
-    if gv_unlocked():
-        with st.sidebar:
-            st.success("👨‍🏫 GV: đã đăng nhập")
-            if st.button("Đăng xuất"):
-                st.session_state.clear()
-                st.rerun()
-        return
-
-    teacher_pw = st.secrets.get("teacher_password", "")
-    with st.sidebar.expander("🔒 Đăng nhập Giảng viên", expanded=False):
-        pw = st.text_input("Mật khẩu GV", type="password")
-        if st.button("Đăng nhập"):
-            if teacher_pw and pw == teacher_pw:
-                st.session_state["gv_unlocked"] = True
-                st.rerun()
-            else:
-                st.warning("Sai mật khẩu hoặc chưa cấu hình teacher_password trong Secrets.")
-
 # ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="wide")
-# --- Guard: buộc phải có secrets thì mới chạy ---
-missing = []
-if "teacher_password" not in st.secrets:
-    missing.append("teacher_password")
-if "google_service_account" not in st.secrets:
-    missing.append("[google_service_account]")
-
-if missing:
-    st.error("🔒 App bị khóa vì thiếu Secrets: " + ", ".join(missing)
-             + ". Vào Settings → Secrets để cấu hình rồi reload.")
-    st.stop()
-
 qp = get_query_params()
 
-# KHÔNG phải SV vào bằng QR thì hiển thị form đăng nhập GV
-if qp.get("sv") != "1":
-    render_gv_auth()
-
-# ===================== MÀN HÌNH SINH VIÊN (?sv=1&buoi=...) =====================
+# ===================== MÀN HÌNH SINH VIÊN =====================
 if qp.get("sv") == "1":
     buoi_sv = qp.get("buoi", "Buổi 1")
-    lock_key = f"locked_{buoi_sv}"        # khóa theo từng buổi (session trình duyệt)
-    info_key = f"lock_info_{buoi_sv}"
-
     st.title("🎓 Điểm danh sinh viên")
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
-    # Nếu đã khóa phiên này -> chỉ hiển thị thông tin, không hiện form nữa
-    if st.session_state.get(lock_key):
-        st.success(st.session_state.get(info_key, "Bạn đã điểm danh thành công."))
-        st.stop()
-
-    # Form nhập
     mssv = st.text_input("Nhập MSSV")
     hoten = st.text_input("Nhập họ và tên")
 
@@ -258,53 +159,19 @@ if qp.get("sv") == "1":
                 sheet = get_sheet()
                 col_buoi = find_header_col(sheet, buoi_sv)
                 cell_mssv = sheet.find(str(mssv).strip())
-
-                # Kiểm tra họ tên khớp
                 hoten_sheet = sheet.cell(cell_mssv.row, find_header_col(sheet, "Họ và Tên")).value
                 if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                     st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
-                    st.stop()
-
-                # Nếu đã có dấu điểm danh trước đó -> không ghi đè, khoá phiên
-                curr_mark = (sheet.cell(cell_mssv.row, col_buoi).value or "").strip()
-                if curr_mark:
-                    # Đọc thời gian đã ghi (nếu có)
-                    try:
-                        time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
-                        exist_time = sheet.cell(cell_mssv.row, time_col).value or ""
-                    except Exception:
-                        exist_time = ""
-                    msg = f"✅ MSSV **{mssv}** đã điểm danh trước đó" + (f" lúc **{exist_time}**." if exist_time else ".")
-                    st.info(msg)
-                    st.session_state[lock_key] = True
-                    st.session_state[info_key] = msg
-                    st.rerun()
-
-                # Chưa có -> tiến hành ghi ✅ và thời gian
-                sheet.update_cell(cell_mssv.row, col_buoi, "✅")
-                time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
-                now_str = datetime.datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
-                sheet.update_cell(cell_mssv.row, time_col, now_str)
-
-                msg = f"🎉 Điểm danh thành công! MSSV **{mssv}** ({now_str})."
-                st.success(msg)
-                st.session_state[lock_key] = True
-                st.session_state[info_key] = msg
-                st.rerun()
-
+                else:
+                    sheet.update_cell(cell_mssv.row, col_buoi, "✅")
+                    st.success("🎉 Điểm danh thành công!")
             except Exception as e:
                 st.error(f"❌ Lỗi khi điểm danh: {e}")
     st.stop()
 
-# ===================== MÀN HÌNH GIẢNG VIÊN & CÔNG CỤ =====================
+# ===================== MÀN HÌNH GIẢNG VIÊN =====================
 st.title("📋 Hệ thống điểm danh QR")
 
-# Chặn CỨNG toàn bộ chức năng GV khi chưa đăng nhập
-if not gv_unlocked():
-    st.error("🔒 Bạn chưa đăng nhập Giảng viên. Vào **Sidebar → Đăng nhập Giảng viên** để mở khóa.")
-    st.stop()
-
-# ĐÃ đăng nhập thì mới render các tab của GV
 tab_gv, tab_search, tab_stats = st.tabs(
     ["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"]
 )
@@ -327,7 +194,7 @@ with tab_gv:
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
     if go:
-        # placeholder cố định -> mỗi vòng ghi đè, không sinh widget mới
+        # 3 placeholder cố định để cập nhật (không tạo widget mới mỗi vòng)
         qr_slot = st.empty()       # ảnh QR
         link_slot = st.empty()     # chỗ hiển thị link (nếu bật)
         timer_slot = st.empty()    # đồng hồ đếm ngược
@@ -335,8 +202,8 @@ with tab_gv:
         try:
             while True:
                 now = int(time.time())
-                slot_val = now // 30
-                token = f"{slot_val}"
+                slot = now // 30                      # đổi token mỗi 30s
+                token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
                 )
@@ -344,22 +211,16 @@ with tab_gv:
 
                 # Tạo ảnh QR
                 qr = qrcode.make(qr_data)
-                buf = io.BytesIO()
-                qr.save(buf, format="PNG")
-                buf.seek(0)
+                buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
                 img = Image.open(buf)
 
                 # Cập nhật ảnh QR
                 qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=260)
 
-                # Hiển thị link (click được) + ô copy
+                # Chỉ hiển thị link nếu bật show_link (dùng code/textarea để dễ copy)
                 if show_link:
                     with link_slot.container():
-                        st.markdown(
-                            f'<a href="{qr_data}" target="_blank" rel="noopener noreferrer">🌐 Mở link hiện tại</a>',
-                            unsafe_allow_html=True
-                        )
-                        st.code(qr_data)
+                        st.text_area("URL hiện tại", qr_data, height=80)
                 else:
                     link_slot.empty()
 
@@ -373,6 +234,7 @@ with tab_gv:
 
         except Exception as e:
             st.error(f"❌ Lỗi khi tạo QR: {e}")
+
 
 # ---------- TAB TÌM KIẾM ----------
 with tab_search:
@@ -426,12 +288,8 @@ with tab_stats:
             group = str(r.get("Tổ", "")).strip() or "Chưa rõ"
             if group not in by_group:
                 by_group[group] = {"present": 0, "absent": 0}
-            if flag:
-                by_group[group]["present"] += 1
-            else:
-                by_group[group]["absent"] += 1
+            by_group[group]["present" if flag else "absent"] += 1
 
-        # Tổng quan
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("✅ Có mặt", present)
@@ -439,47 +297,10 @@ with tab_stats:
             st.metric("❌ Vắng", absent)
         with c3:
             total = present + absent
-            rate_total = f"{(present / total * 100):.1f}%" if total else "-"
-            st.metric("📈 Tỷ lệ có mặt", rate_total)
+            st.metric("📈 Tỷ lệ có mặt", f"{(present/total*100):.1f}%" if total else "-")
 
-        # Chuẩn bị dữ liệu theo Tổ để vẽ biểu đồ
-        rows = []
-        for g, v in sorted(by_group.items()):
-            total_g = v["present"] + v["absent"]
-            rate = (v["present"] / total_g * 100) if total_g else 0.0
-            rows.append({
-                "Tổ": g,
-                "Có mặt": v["present"],
-                "Vắng": v["absent"],
-                "Tổng": total_g,
-                "Tỷ lệ (%)": round(rate, 1),
-                "Nhãn": f"{v['present']} ({rate:.1f}%)"
-            })
-        df = pd.DataFrame(rows)
-
-        # Biểu đồ cột: mỗi Tổ một màu, có nhãn + tooltip
-        if not df.empty:
-            base = alt.Chart(df).encode(
-                x=alt.X('Tổ:N', sort=None, title='Tổ'),
-                y=alt.Y('Có mặt:Q', title='Số SV có mặt'),
-                color=alt.Color('Tổ:N', legend=None),
-                tooltip=[
-                    alt.Tooltip('Tổ:N', title='Tổ'),
-                    alt.Tooltip('Có mặt:Q', title='Có mặt'),
-                    alt.Tooltip('Vắng:Q', title='Vắng'),
-                    alt.Tooltip('Tổng:Q', title='Tổng'),
-                    alt.Tooltip('Tỷ lệ (%):Q', title='Tỷ lệ (%)')
-                ]
-            )
-            bars = base.mark_bar()
-            text = base.mark_text(dy=-5).encode(text='Nhãn:N')  # nhãn trên cột
-            chart = (bars + text).properties(height=340)
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("Không có dữ liệu để vẽ biểu đồ.")
-
-        # Bảng thống kê dưới biểu đồ
         table = []
+                
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
             if total_g:
@@ -495,4 +316,8 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
+
+
+
 
