@@ -16,24 +16,18 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- thay bằng ID thật của Google Sheet
-WORKSHEET_NAME = "D25A"  # <-- thay bằng tên sheet thật
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- ID file Sheet của bạn
+WORKSHEET_NAME = "D25A"  # <-- tên sheet con trong file (ví dụ: D25A)
 
-# ============== HỖ TRỢ: CHUẨN HÓA PRIVATE KEY & KẾT NỐI ==============
+# ===================== HÀM CHUẨN HÓA PRIVATE KEY & KẾT NỐI =====================
 @st.cache_resource
 def _get_gspread_client():
-    """
-    Kết nối Google Sheets và tự động 'sửa khóa' nếu định dạng private_key bị lỗi:
-    - '\\n' vs xuống dòng thật
-    - kí tự lạ / khoảng trắng
-    - padding base64 ('Incorrect padding', 'Excess data after padding', 'Short substrate on input', ...)
-    """
     cred = dict(st.secrets["google_service_account"])
     pk = cred.get("private_key", "")
     if not pk:
-        raise RuntimeError("Secrets thiếu 'private_key'.")
+        raise RuntimeError("Secrets thiếu private_key.")
 
-    # 1) Chuẩn hóa xuống dòng
+    # 1. Chuẩn hóa xuống dòng
     if "\\n" in pk:
         pk = pk.replace("\\n", "\n")
     pk = pk.replace("\r\n", "\n").replace("\r", "\n")
@@ -41,50 +35,40 @@ def _get_gspread_client():
     header = "-----BEGIN PRIVATE KEY-----"
     footer = "-----END PRIVATE KEY-----"
     if header not in pk or footer not in pk:
-        raise RuntimeError("private_key thiếu header/footer BEGIN/END PRIVATE KEY.")
+        raise RuntimeError("private_key thiếu header/footer BEGIN/END.")
 
-    # 2) Lấy phần thân base64 giữa header/footer và làm sạch
+    # 2. Lọc ký tự hợp lệ
     lines = [ln.strip() for ln in pk.split("\n")]
     try:
         h_idx = lines.index(header)
         f_idx = lines.index(footer)
     except ValueError:
-        raise RuntimeError("Định dạng private_key không hợp lệ (không tìm thấy header/footer).")
-
-    body_lines = [ln for ln in lines[h_idx + 1 : f_idx] if ln]
-    # Chỉ giữ Base64-char để tránh ký tự lạ
+        raise RuntimeError("Định dạng private_key không hợp lệ.")
+    body_lines = [ln for ln in lines[h_idx + 1:f_idx] if ln]
     body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", "".join(body_lines))
 
-    # 3) Bỏ padding cũ rồi thêm padding mới theo mod 4
-    body_str = body_raw.replace("=", "")
-    if not body_str:
-        raise RuntimeError("private_key base64 rỗng sau khi làm sạch.")
-    rem = len(body_str) % 4
-    if rem != 0:
-        body_str += "=" * (4 - rem)
-
-    # 4) Thử decode để bắt mọi lỗi base64 (Short substrate..., Incorrect padding,...)
+    # 3. Chuẩn hóa padding base64
+    body = body_raw.replace("=", "")
+    if not body:
+        raise RuntimeError("private_key rỗng sau khi làm sạch.")
+    rem = len(body) % 4
+    if rem:
+        body += "=" * (4 - rem)
     try:
-        base64.b64decode(body_str, validate=True)
+        base64.b64decode(body, validate=True)
     except Exception as e:
-        svc = cred.get("client_email", "(không lấy được)")
+        svc = cred.get("client_email", "(không rõ)")
         raise RuntimeError(
-            "❌ private_key trong secrets bị hỏng hoặc thiếu ký tự.\n"
-            "Hãy tạo key JSON mới và copy nguyên văn (không thêm ...).\n"
-            f"Service Account: {svc}\nLỗi gốc: {e}"
+            f"❌ private_key lỗi base64: {e}\nService Account: {svc}"
         )
 
-    # 5) Reflow lại PEM: 64 ký tự mỗi dòng
-    pk_clean = header + "\n"
-    for i in range(0, len(body_str), 64):
-        pk_clean += body_str[i : i + 64] + "\n"
-    pk_clean += footer + "\n"
-
+    # 4. Ghép lại PEM chuẩn
+    pk_clean = header + "\n" + "\n".join(body[i:i+64] for i in range(0, len(body), 64)) + "\n" + footer + "\n"
     cred["private_key"] = pk_clean
 
-    # 6) Tạo credentials và trả về client
     creds = Credentials.from_service_account_info(cred, scopes=SCOPES)
     return gspread.authorize(creds)
+
 
 def get_sheet():
     client = _get_gspread_client()
@@ -93,94 +77,70 @@ def get_sheet():
 
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
-    """Lấy query params, tương thích bản Streamlit mới"""
     if hasattr(st, "query_params"):
-        # st.query_params đã là dict-like
         return dict(st.query_params)
-    else:
-        raw = st.experimental_get_query_params()
-        return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
+    raw = st.experimental_get_query_params()
+    return {k: (v[0] if isinstance(v, list) and v else v) for k, v in raw.items()}
+
 
 def normalize_name(name: str):
-    """Viết hoa chữ cái đầu mỗi từ (dùng cho so khớp chính xác)"""
     return " ".join(w.capitalize() for w in name.strip().split())
 
+
 def strip_accents(s: str) -> str:
-    """Bỏ dấu tiếng Việt để tìm kiếm gần đúng (AI-ish fuzzy)"""
     s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     return unicodedata.normalize("NFC", s)
 
+
 def norm_search(s: str) -> str:
-    """Chuẩn hóa cho tìm kiếm: bỏ dấu, lower, bỏ khoảng thừa"""
     return " ".join(strip_accents(s).lower().split())
 
+
 def load_records(sheet):
-    """
-    Tải toàn bộ dữ liệu dưới dạng list[dict].
-    Cần các cột: 'MSSV', 'Họ và Tên', 'Tổ', 'Buổi 1'... (tên cột 'Họ và Tên' đã dùng trong mã gốc)
-    """
     return sheet.get_all_records(expected_headers=None, default_blank="")
 
+
 def find_header_col(sheet, header_name):
-    """Tìm vị trí cột theo tiêu đề (dùng khi update/check nhanh)"""
     return sheet.find(header_name).col
 
+
 def find_student_candidates(records, query: str):
-    """
-    Tìm SV theo:
-    - 4 số cuối MSSV (nếu query là 4 chữ số)
-    - hoặc họ tên (gần đúng: contains + difflib.get_close_matches)
-    Trả về list[dict] (các dòng khớp).
-    """
     q = query.strip()
     if not q:
         return []
-
-    # 1) MSSV 4 số cuối
     if q.isdigit() and len(q) == 4:
         return [r for r in records if str(r.get("MSSV", "")).strip().endswith(q)]
-
-    # 2) Họ tên gần đúng
     qn = norm_search(q)
-    # Ưu tiên contains (không dấu)
     contains = [r for r in records if qn in norm_search(r.get("Họ và Tên", ""))]
     if contains:
         return contains
-
-    # Sau đó dùng gần đúng theo difflib
     names = [r.get("Họ và Tên", "") for r in records]
     name_map = {n: r for n, r in zip(names, records)}
-    # lấy 5 kết quả gần nhất
     close = get_close_matches(q, names, n=5, cutoff=0.6)
     if not close:
-        # thử không dấu
         names_no = [norm_search(n) for n in names]
         name_map_no = {norm_search(n): n for n in names}
         close_no = get_close_matches(qn, names_no, n=5, cutoff=0.6)
         close = [name_map_no[c] for c in close_no]
     return [name_map[n] for n in close]
 
+
 def attendance_flag(val):
-    """Xác định đã điểm danh hay chưa (coi mọi giá trị khác rỗng là có mặt)"""
     return str(val).strip() != ""
+
 
 # ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 qp = get_query_params()
 
-# Nếu URL có sv=1 hoặc buoi=... thì chỉ hiển thị form SV
-student_only = (qp.get("sv") == "1") or ("buoi" in qp)
-
 # ===================== MÀN HÌNH SINH VIÊN =====================
-if student_only:
+if qp.get("sv") == "1":
     buoi_sv = qp.get("buoi", "Buổi 1")
     st.title("🎓 Điểm danh sinh viên")
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
-    st.write("Mã số sinh viên: 51125", unsafe_allow_html=True)
-    mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
-    mssv = "51125" + (mssv_tail or "").strip()
+    mssv = st.text_input("Nhập MSSV")
     hoten = st.text_input("Nhập họ và tên")
 
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
@@ -201,19 +161,16 @@ if student_only:
                     st.success("🎉 Điểm danh thành công!")
             except Exception as e:
                 st.error(f"❌ Lỗi khi điểm danh: {e}")
-
     st.stop()
 
 # ===================== MÀN HÌNH GIẢNG VIÊN =====================
 st.title("📋 Hệ thống điểm danh QR")
 
-tab_gv, tab_search, tab_stats, tab_sv = st.tabs(
-    ["👨‍🏫 Giảng viên", "🔎 Tìm kiếm", "📊 Thống kê", "🎓 Sinh viên"]
-)
+tab_gv, tab_search, tab_stats = st.tabs(["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"])
 
 # ---------- TAB GIẢNG VIÊN ----------
 with tab_gv:
-    st.subheader("📸 Tạo mã QR điểm danh")
+    st.subheader("📸 Tạo mã QR điểm danh (động mỗi 30 giây)")
     buoi = st.selectbox(
         "Chọn buổi học",
         ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
@@ -221,30 +178,43 @@ with tab_gv:
         key="buoi_gv_select",
     )
 
-    if st.button("Tạo mã QR", use_container_width=True):
-        st.session_state["buoi"] = buoi
-        qr_data = f"https://qrlecturer.streamlit.app/?sv=1&buoi={urllib.parse.quote(buoi)}"
+    auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
+    go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
-        qr = qrcode.make(qr_data)
-        buf = io.BytesIO()
-        qr.save(buf, format="PNG")
-        buf.seek(0)
-        img = Image.open(buf)
+    if go:
+        container = st.empty()
+        timer = st.empty()
+        try:
+            while True:
+                now = int(time.time())
+                slot = now // 30
+                token = f"{slot}"
+                base_url = st.secrets["google_service_account"].get("app_base_url", "https://example.com")
+                qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
 
-        st.image(img, caption="📱 Quét mã để điểm danh", width=260)
-        st.write(f"🔗 Link: {qr_data}")
+                qr = qrcode.make(qr_data)
+                buf = io.BytesIO()
+                qr.save(buf, format="PNG")
+                buf.seek(0)
+                img = Image.open(buf)
 
-        countdown = st.empty()
-        for i in range(60, 0, -1):  # hiệu lực 1 phút
-            countdown.markdown(f"⏳ Thời gian còn lại: **{i} giây**")
-            time.sleep(1)
-        countdown.markdown("✅ Hết thời gian điểm danh")
+                container.image(img, caption="📱 Quét mã để điểm danh", width=260)
+                st.write(f"🔗 Link: {qr_data}")
 
-# ---------- TAB TÌM KIẾM (AI trợ giúp gần đúng) ----------
+                remain = 30 - (now % 30)
+                timer.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
+
+                if not auto:
+                    break
+                time.sleep(1)
+        except Exception as e:
+            st.error(f"❌ Lỗi khi tạo QR: {e}")
+
+# ---------- TAB TÌM KIẾM ----------
 with tab_search:
-    st.subheader("🔎 Tìm kiếm sinh viên (4 số cuối MSSV hoặc họ và tên)")
+    st.subheader("🔎 Tìm sinh viên (4 số cuối MSSV hoặc họ và tên)")
     q = st.text_input("Nhập từ khóa tìm kiếm", placeholder="VD: 1234 hoặc 'Nguyen Van A'")
-    run = st.button("Tìm", type="primary", use_container_width=True)
+    run = st.button("Tìm", use_container_width=True)
 
     if run and q.strip():
         try:
@@ -256,97 +226,58 @@ with tab_search:
                 st.warning("🙁 Không tìm thấy kết quả phù hợp.")
             else:
                 st.success(f"Tìm thấy {len(results)} kết quả:")
-                # Hiển thị gọn: MSSV, Họ và Tên, Tổ, và trạng thái các buổi (✅/trống)
-                show_cols = []
-                if records:
-                    # Lấy tất cả header từ bản ghi đầu
-                    show_cols = list(records[0].keys())
-
-                preferred = ["MSSV", "Họ và Tên", "Tổ"]
-                # Ưu tiên 3 cột chính + các cột 'Buổi ...'
+                show_cols = list(records[0].keys()) if records else []
+                pref = ["MSSV", "Họ và Tên", "Tổ"]
                 buoi_cols = [c for c in show_cols if c.lower().startswith("buổi ")]
-                cols = [c for c in preferred if c in show_cols] + buoi_cols
+                cols = [c for c in pref if c in show_cols] + buoi_cols
 
-                # Rút gọn mỗi kết quả theo các cột trên
                 tidy = []
                 for r in results:
                     row = {c: r.get(c, "") for c in cols}
-                    # Chuẩn hóa hiển thị tick
                     for bc in buoi_cols:
                         row[bc] = "✅" if attendance_flag(r.get(bc, "")) else ""
                     tidy.append(row)
-
                 st.dataframe(tidy, use_container_width=True)
         except Exception as e:
             st.error(f"❌ Lỗi khi tìm kiếm: {e}")
 
-# ---------- TAB THỐNG KÊ (chia theo Tổ) ----------
+# ---------- TAB THỐNG KÊ ----------
 with tab_stats:
     st.subheader("📊 Thống kê điểm danh theo buổi & theo Tổ")
     try:
         sheet = get_sheet()
-        # Chọn buổi để thống kê (độc lập với tab GV)
-        # Tự động dò các cột có dạng "Buổi ..."
         headers = sheet.row_values(1)
         buoi_list = [h for h in headers if h.lower().startswith("buổi ")]
-        buoi_chon = st.selectbox("Chọn buổi", buoi_list or ["Buổi 1"], index=0, key="buoi_stats_select")
-
-        # Tải dữ liệu
+        buoi_chon = st.selectbox("Chọn buổi", buoi_list or ["Buổi 1"], index=0)
         records = load_records(sheet)
 
-        # Tổng hợp
-        present_count = 0
-        absent_count = 0
-        by_group = {}  # {Tổ: {"present": x, "absent": y}}
-
+        present, absent = 0, 0
+        by_group = {}
         for r in records:
             flag = attendance_flag(r.get(buoi_chon, ""))
             if flag:
-                present_count += 1
+                present += 1
             else:
-                absent_count += 1
+                absent += 1
             group = str(r.get("Tổ", "")).strip() or "Chưa rõ"
             if group not in by_group:
                 by_group[group] = {"present": 0, "absent": 0}
             by_group[group]["present" if flag else "absent"] += 1
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("✅ Đã điểm danh", present_count)
+            st.metric("✅ Có mặt", present)
         with c2:
-            st.metric("❌ Vắng mặt", absent_count)
+            st.metric("❌ Vắng", absent)
+        with c3:
+            total = present + absent
+            st.metric("📈 Tỷ lệ có mặt", f"{(present/total*100):.1f}%" if total else "-")
 
-        st.markdown("#### 📌 Phân bố theo Tổ")
-        # Bảng theo tổ
         table = []
-        for g, v in sorted(by_group.items(), key=lambda x: str(x[0])):
-            total = v["present"] + v["absent"]
-            rate = f"{(v['present'] / total * 100):.1f}%" if total else "-"
-            table.append(
-                {"Tổ": g, "Có mặt": v["present"], "Vắng": v["absent"], "Tỷ lệ có mặt": rate}
-            )
+        for g, v in sorted(by_group.items()):
+            total_g = v["present"] + v["absent"]
+            rate_g = f"{(v['present']/total_g*100):.1f}%" if total_g else "-"
+            table.append({"Tổ": g, "Có mặt": v["present"], "Vắng": v["absent"], "Tỷ lệ có mặt": rate_g})
         st.dataframe(table, use_container_width=True)
-
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-
-# ---------- TAB SINH VIÊN (DỰ PHÒNG) ----------
-with tab_sv:
-    st.subheader("📲 Nhập thông tin điểm danh (dành cho SV)")
-    mssv = st.text_input("Nhập MSSV")
-    hoten = st.text_input("Nhập họ và tên")
-    buoi_sv = st.session_state.get("buoi", "Buổi 1")
-
-    if st.button("Điểm danh", use_container_width=True):
-        try:
-            sheet = get_sheet()
-            col_buoi = find_header_col(sheet, buoi_sv)
-            cell_mssv = sheet.find(str(mssv).strip())
-            hoten_sheet = sheet.cell(cell_mssv.row, find_header_col(sheet, "Họ và Tên")).value
-            if normalize_name(hoten_sheet or "") != normalize_name(hoten):
-                st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
-            else:
-                sheet.update_cell(cell_mssv.row, col_buoi, "✅")
-                st.success("🎉 Điểm danh thành công!")
-        except Exception as e:
-            st.error(f"❌ Lỗi khi điểm danh: {e}")
