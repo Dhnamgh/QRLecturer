@@ -219,9 +219,13 @@ with tab_gv:
                     cols = st.columns([1, 1, 2])
                     with cols[0]:
                         st.download_button(
-                            "📎 Tải link", qr_data.encode("utf-8"),
-                            file_name="qr_link.txt", use_container_width=True
+                            "📎 Tải link",
+                            qr_data.encode("utf-8"),
+                            file_name="qr_link.txt",
+                            use_container_width=True,
+                            key=f"dl_{token}"   # 👈 thêm dòng này
                         )
+
                     with cols[1]:
                         st.link_button("🌐 Mở link", qr_data, use_container_width=True)
                     with cols[2]:
@@ -321,5 +325,6 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
 
