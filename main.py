@@ -305,10 +305,21 @@ with tab_stats:
             st.metric("📈 Tỷ lệ có mặt", f"{(present/total*100):.1f}%" if total else "-")
 
         table = []
+                
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
-            rate_g = f"{(v['present"]/total_g*100):.1f}%" if total_g else "-"
-            table.append({"Tổ": g, "Có mặt": v["present"], "Vắng": v["absent"], "Tỷ lệ có mặt": rate_g})
+            if total_g:
+                rate_g = f"{(v['present'] / total_g * 100):.1f}%"
+            else:
+                rate_g = "-"
+            table.append({
+                "Tổ": g,
+                "Có mặt": v["present"],
+                "Vắng": v["absent"],
+                "Tỷ lệ có mặt": rate_g
+            })
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
+
