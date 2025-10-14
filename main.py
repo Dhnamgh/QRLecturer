@@ -685,13 +685,13 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio(
         "Chọn mục",
-        options=["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
+        options=["👨‍🏫 Tạo QR code", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
         index=0,
         label_visibility="collapsed"
     )
 
 # Nội dung ở khung chính
-if menu == "👨‍🏫 Giảng viên (QR động)":
+if menu == "👨‍🏫 Tạo QR code":
     render_tab_gv()
 elif menu == "🔎 Tìm kiếm":
     render_tab_search()
@@ -721,4 +721,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
