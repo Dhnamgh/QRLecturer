@@ -10,6 +10,30 @@ import re
 import base64
 import unicodedata
 from difflib import get_close_matches
+import datetime  # 👈 dùng module chuẩn, an toàn
+import pandas as pd
+import altair as alt
+
+# ===================== CẤU HÌNH GOOGLE SHEETS =====================
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"
+WORKSHEET_NAME = "D25A"
+VN_TZ = datetime.timezone(datetime.timedelta(hours=7))  # 👈 timezone Việt Nam
+import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
+import qrcode
+from PIL import Image
+import io
+import time
+import urllib.parse
+import re
+import base64
+import unicodedata
+from difflib import get_close_matches
 from datetime import datetime, timezone, timedelta
 
 # ===================== CẤU HÌNH GOOGLE SHEETS =====================
@@ -453,4 +477,5 @@ with tab_stats:
 
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
