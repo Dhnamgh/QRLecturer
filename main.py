@@ -466,10 +466,288 @@ with tab_stats:
 
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-tab_gv, tab_search, tab_stats, tab_ai = st.tabs(
-    ["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"]
-)
+# ---------- TAB TRỢ LÝ AI (nâng cấp) ----------
+with tab_ai:
+    st.subheader("🤖 Trợ lý AI")
+    st.caption(
+        "Ví dụ: “Buổi 3 có bao nhiêu SV đi học?”, “Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
+        "“Ai đi học sớm nhất buổi 2?”, “Ai đến muộn nhất buổi 4?”, "
+        "“Buổi 1 Thái có đi học không?”, “MSSV 5112xxxx đi mấy buổi?”, “Nguyen Van A có vắng không?”"
+    )
 
+    q_raw = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi tiếng Việt (có thể gõ không dấu)...")
+
+    # ===== Helpers NLP (không dùng thư viện ngoài) =====
+    def lv_norm(s):
+        import unicodedata, re
+        s = (s or "").strip().lower()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        s = unicodedata.normalize("NFC", s)
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    def fuzzy_has(text_norm, variants, thresh=0.8):
+        from difflib import SequenceMatcher
+        for v in variants:
+            v2 = lv_norm(v)
+            if v2 in text_norm:
+                return True
+            if SequenceMatcher(None, text_norm, v2).ratio() >= thresh:
+                return True
+        return False
+
+    def extract_buoi(text_norm, buoi_cols):
+        import re
+        # khớp trực tiếp theo tên cột (không dấu)
+        for b in buoi_cols:
+            if lv_norm(b) in text_norm:
+                return b
+        # khớp "buoi <so>"
+        m = re.search(r"buoi\s*(\d+)", text_norm)
+        if m:
+            num = m.group(1)
+            for b in buoi_cols:
+                if re.search(rf"\b{num}\b", lv_norm(b)):
+                    return b
+        return None
+
+    def extract_to(text_norm):
+        import re
+        m = re.search(r"\bto\s*([a-z0-9]+)\b", text_norm)
+        return m.group(1) if m else None
+
+    def looks_like_mssv(s):
+        import re
+        s = re.sub(r"\D", "", s or "")
+        return len(s) >= 7
+
+    def extract_mssv(text_norm):
+        import re
+        m = re.search(r"(?:mssv|sv|student)\s*([0-9]{6,})", text_norm)
+        if m: return m.group(1)
+        m2 = re.search(r"\b([0-9]{7,})\b", text_norm)
+        return m2.group(1) if m2 else None
+
+    def find_student_row(records, mssv_or_name):
+        # ưu tiên MSSV
+        import re
+        if looks_like_mssv(mssv_or_name):
+            ms = re.sub(r"\D", "", mssv_or_name)
+            for r in records:
+                if re.sub(r"\D", "", str(r.get("MSSV",""))) == ms:
+                    return r
+        # tên gần đúng (không dấu)
+        target = lv_norm(mssv_or_name)
+        names = [r.get("Họ và Tên","") for r in records]
+        name_map = {n: r for n, r in zip(names, records)}
+        for n in names:
+            if target and target in lv_norm(n):
+                return name_map[n]
+        from difflib import get_close_matches
+        cand = get_close_matches(mssv_or_name, names, n=1, cutoff=0.6)
+        return name_map[cand[0]] if cand else None
+
+    def extract_name_candidate(text_norm):
+        import re
+        stop = {
+            "buoi","buổi","to","tổ","mssv","sv","student",
+            "di","đi","hoc","học","co","có","mat","mặt","vang","vắng",
+            "khong","không","ai","nhat","nhất","som","sớm","muon","muộn",
+            "den","đến","tre","trễ","bao","nhiu","nhieu","bao nhieu",
+            "ty","le","ty le","chuyen","can","chuyên","cần","trung","binh","trung binh",
+            "la","là","khong di","co di","khong co mat"
+        }
+        tokens = re.findall(r"[a-zA-ZÀ-ỹ0-9]+", text_norm)
+        remain = [t for t in tokens if t not in stop and not t.isdigit()]
+        name = " ".join(remain).strip()
+        return name if name else None
+
+    def find_time_col_index(headers, buoi_col, buoi_header):
+        import re
+        n = len(headers)
+        nxt = buoi_col + 1
+        if nxt <= n:
+            h = (headers[nxt - 1] or "").lower()
+            if "thời gian" in h or "time" in h:
+                return nxt
+        m = re.search(r"(\d+)", buoi_header or "", flags=re.I)
+        idx = m.group(1) if m else None
+        if idx:
+            for i, h in enumerate(headers, start=1):
+                hl = (h or "").lower()
+                if (("thời gian" in hl) or ("time" in hl)) and re.search(rf"\b{idx}\b", hl):
+                    return i
+        return None
+
+    def parse_time(val):
+        if not val: return None
+        val = str(val).strip()
+        fmts = ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%H:%M:%S", "%H:%M"]
+        for fmt in fmts:
+            try:
+                dt = datetime.datetime.strptime(val, fmt)
+                if fmt in ("%H:%M:%S", "%H:%M"):
+                    today = datetime.datetime.now(VN_TZ).date()
+                    dt = datetime.datetime.combine(today, dt.time())
+                return dt.replace(tzinfo=VN_TZ)
+            except Exception:
+                continue
+        return None
+
+    def answer(q_user):
+        import re
+        from difflib import get_close_matches
+
+        qn = lv_norm(q_user)
+        sheet = get_sheet()
+        records = load_records(sheet)
+        if not records:
+            return "Không có dữ liệu trong Sheet."
+
+        headers = sheet.row_values(1)
+        buoi_cols = [h for h in headers if lv_norm(h).startswith("buoi ")]
+        if not buoi_cols:
+            return "Không tìm thấy các cột 'Buổi ...' trong Sheet."
+
+        total_sv = len(records)
+        def col_idx_of(header_name):  # 1-based
+            return headers.index(header_name) + 1
+
+        # ------ Intent: sớm nhất / muộn nhất ------
+        ask_earliest = fuzzy_has(qn, ["som nhat", "sớm nhất", "di hoc som nhat", "den som nhat", "som nhut", "somnha"])
+        ask_latest   = fuzzy_has(qn, ["muon nhat", "muộn nhất", "den muon nhat", "den tre nhat", "tre nhat"])
+        if ask_earliest or ask_latest:
+            b = extract_buoi(qn, buoi_cols) or buoi_cols[-1]
+            b_col = col_idx_of(b)
+            t_col = find_time_col_index(headers, b_col, b)
+            if not t_col:
+                return f"Không tìm thấy cột thời gian ứng với “{b}”."
+
+            best_row, best_time = None, None
+            for r_idx, r in enumerate(records, start=2):
+                if not str(r.get(b,"")).strip():  # chỉ xét đã ✅
+                    continue
+                try:
+                    t_val = sheet.cell(r_idx, t_col).value
+                except Exception:
+                    t_val = ""
+                t_parsed = parse_time(t_val)
+                if not t_parsed:
+                    continue
+                if best_time is None:
+                    best_time, best_row = t_parsed, r
+                else:
+                    if ask_earliest and t_parsed < best_time:
+                        best_time, best_row = t_parsed, r
+                    if ask_latest and t_parsed > best_time:
+                        best_time, best_row = t_parsed, r
+            if best_row is None:
+                return f"Chưa có dữ liệu thời gian hợp lệ cho {b}."
+            name = best_row.get("Họ và Tên","(không tên)")
+            ms   = best_row.get("MSSV","?")
+            kind = "sớm nhất" if ask_earliest else "muộn nhất"
+            return f"👤 {name} ({ms}) là người {kind} trong {b}: {best_time.strftime('%Y-%m-%d %H:%M:%S')}."
+
+        # ------ Intent: Buổi X <tên> có đi học không? (liệt kê tất cả khớp) ------
+        if any(w in qn for w in ["di hoc","đi học","co mat","có mặt","vang","vắng","khong","không"]):
+            b = extract_buoi(qn, buoi_cols)
+            if b:
+                name_guess = extract_name_candidate(qn)
+                if name_guess:
+                    target_norm = lv_norm(name_guess)
+                    matches = [r for r in records if target_norm in lv_norm(r.get("Họ và Tên",""))]
+                    if not matches:
+                        names = [r.get("Họ và Tên","") for r in records]
+                        close = get_close_matches(name_guess, names, n=5, cutoff=0.6)
+                        name_map = {n: r for n, r in zip(names, records)}
+                        matches = [name_map[n] for n in close]
+                    if not matches:
+                        return f"Không tìm thấy sinh viên nào khớp với “{name_guess}”."
+                    lines = []
+                    for r in matches:
+                        flag = "✅" if str(r.get(b,"")).strip() != "" else "❌"
+                        lines.append(f"- {r.get('Họ và Tên','(không tên)')} ({r.get('MSSV','?')}): {flag} tại {b}")
+                    return f"Kết quả cho “{name_guess}” ở {b}:\n" + "\n".join(lines)
+
+        # ------ Thống kê theo buổi / tổng quan ------
+        if any(w in qn for w in ["bao nhieu","đi học","di hoc","co mat","có mặt","vang","vắng"]):
+            present = {b: sum(1 for r in records if str(r.get(b,"")).strip() != "") for b in buoi_cols}
+            b = extract_buoi(qn, buoi_cols)
+            if b:
+                p = present[b]; a = total_sv - p
+                return f"{b}: {p}/{total_sv} có mặt, {a} vắng ({(p/total_sv*100):.1f}%)."
+            total_present_all = sum(present.values())
+            total_slots = total_sv * len(buoi_cols)
+            rate = total_present_all/total_slots*100 if total_slots else 0
+            return f"Tổng tất cả buổi: {total_present_all}/{total_slots} lượt có mặt (~{rate:.1f}%)."
+
+        # ------ Theo tổ ------
+        if " to " in f" {qn} " or re.search(r"\bto\b", qn):
+            b = extract_buoi(qn, buoi_cols) or buoi_cols[-1]
+            target_to = extract_to(qn)
+            stats = {}
+            for r in records:
+                g = str(r.get("Tổ","")).strip() or "Chưa rõ"
+                stats.setdefault(g, {"present":0,"absent":0})
+                if str(r.get(b,"")).strip() != "":
+                    stats[g]["present"] += 1
+                else:
+                    stats[g]["absent"] += 1
+            if target_to and target_to in stats:
+                v = stats[target_to]; tot = v["present"]+v["absent"]
+                rate = v["present"]/tot*100 if tot else 0
+                return f"{b} - Tổ {target_to}: {v['present']}/{tot} có mặt ({rate:.1f}%)."
+            lines = []
+            for g, v in sorted(stats.items()):
+                tot = v["present"]+v["absent"]; rate = v["present"]/tot*100 if tot else 0
+                lines.append(f"Tổ {g}: {v['present']}/{tot} ({rate:.1f}%)")
+            return f"📊 {b} theo tổ:\n" + "\n".join(lines)
+
+        # ------ Một sinh viên cụ thể (MSSV hoặc tên) ------
+        if "mssv" in qn or re.search(r"\b[0-9]{7,}\b", qn) or any(k in qn for k in ["sv ","sinh vien","sinhvien"]):
+            mssv = extract_mssv(qn)
+            target = mssv if mssv else q_raw
+            row = find_student_row(records, target)
+            if not row:
+                return "Không tìm thấy sinh viên tương ứng."
+            name = row.get("Họ và Tên","(không tên)")
+            ms   = row.get("MSSV","?")
+            presents = 0; marks = []
+            for b in buoi_cols:
+                flag = "✅" if str(row.get(b,"")).strip() != "" else "❌"
+                if flag == "✅": presents += 1
+                marks.append(f"{b}:{flag}")
+            return f"{name} ({ms}) — {presents}/{len(buoi_cols)} buổi có mặt.\n" + ", ".join(marks)
+
+        # ------ Tỷ lệ chuyên cần trung bình ------
+        if "chuyen can" in qn or ("ty le" in qn and "buoi" not in qn):
+            total_present_all = sum(sum(1 for r in records if str(r.get(b,"")).strip() != "") for b in buoi_cols)
+            total_slots = total_sv * len(buoi_cols)
+            rate = total_present_all/total_slots*100 if total_slots else 0
+            return f"📈 Tỷ lệ chuyên cần trung bình: {rate:.1f}%."
+
+        # ------ Danh sách vắng quá N buổi ------
+        m = re.search(r"vang\s+qua\s+(\d+)\s*buoi", qn)
+        if m:
+            limit = int(m.group(1))
+            rows = []
+            for r in records:
+                vangs = sum(1 for b in buoi_cols if str(r.get(b,"")).strip() == "")
+                if vangs > limit:
+                    rows.append(f"- {r.get('Họ và Tên','(không tên)')} ({r.get('MSSV','?')}): {vangs} buổi")
+            return "Danh sách vắng quá {} buổi:\n".format(limit) + ("\n".join(rows) if rows else "Không có.")
+
+        # ------ fallback ------
+        return ("🤔 Tôi chưa chắc ý bạn. Bạn có thể hỏi: "
+                "“Ai đi học sớm nhất buổi 2?”, “Buổi 1 Thái có đi học không?”, "
+                "“Buổi 3 có bao nhiêu SV đi học?”, “MSSV 5112xxxx đi mấy buổi?”")
+
+    if st.button("Hỏi trợ lý", use_container_width=True) and q_raw.strip():
+        try:
+            st.markdown(f"**Trả lời:**\n\n{answer(q_raw)}")
+        except Exception as e:
+            st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
 
 # ---------- FOOTER (bản quyền) ----------
 st.markdown(
@@ -491,6 +769,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
