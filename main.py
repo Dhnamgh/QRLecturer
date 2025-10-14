@@ -182,33 +182,46 @@ with tab_gv:
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
     if go:
-        container = st.empty()
-        timer = st.empty()
-        try:
-            while True:
-                now = int(time.time())
-                slot = now // 30
-                token = f"{slot}"
-                base_url = st.secrets["google_service_account"].get("app_base_url", "https://example.com")
-                qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
+    container = st.empty()
+    timer = st.empty()
+    try:
+        while True:
+            now = int(time.time())
+            slot = now // 30
+            token = f"{slot}"
+            base_url = st.secrets["google_service_account"].get(
+                "app_base_url", "https://qrlecturer.streamlit.app"
+            )
+            qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
 
-                qr = qrcode.make(qr_data)
-                buf = io.BytesIO()
-                qr.save(buf, format="PNG")
-                buf.seek(0)
-                img = Image.open(buf)
+            # Tạo ảnh QR
+            qr = qrcode.make(qr_data)
+            buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
+            img = Image.open(buf)
 
-                container.image(img, caption="📱 Quét mã để điểm danh", width=260)
-                st.write(f"🔗 Link: {qr_data}")
+            # Giao diện gọn (không spam link), có nút và tùy chọn xem chi tiết
+            with container.container():
+                st.image(img, caption="📱 Quét mã để điểm danh", width=260)
+                cols = st.columns([1,1,2])
+                with cols[0]:
+                    st.download_button("📎 Tải link", qr_data.encode("utf-8"),
+                                       file_name="qr_link.txt", use_container_width=True)
+                with cols[1]:
+                    st.link_button("🌐 Mở link", qr_data, use_container_width=True)
+                with cols[2]:
+                    if show_link:
+                        # Hiển thị gọn + có thể copy
+                        st.text_input("URL hiện tại", value=qr_data, label_visibility="visible")
 
-                remain = 30 - (now % 30)
-                timer.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
+            remain = 30 - (now % 30)
+            timer.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
-                if not auto:
-                    break
-                time.sleep(1)
-        except Exception as e:
-            st.error(f"❌ Lỗi khi tạo QR: {e}")
+            if not auto:
+                break
+            time.sleep(1)
+    except Exception as e:
+        st.error(f"❌ Lỗi khi tạo QR: {e}")
+
 
 # ---------- TAB TÌM KIẾM ----------
 with tab_search:
@@ -281,3 +294,4 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
