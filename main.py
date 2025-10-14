@@ -181,7 +181,7 @@ with tab_gv:
     auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
-    if go:
+   if go:
     container = st.empty()
     timer = st.empty()
     try:
@@ -221,6 +221,7 @@ with tab_gv:
             time.sleep(1)
     except Exception as e:
         st.error(f"❌ Lỗi khi tạo QR: {e}")
+
 
 
 # ---------- TAB TÌM KIẾM ----------
@@ -294,4 +295,5 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
