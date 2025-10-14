@@ -749,7 +749,7 @@ with tab_ai:
         except Exception as e:
             st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
 
-# ---------- FOOTER (bản quyền) ----------
+# ---------- FOOTER (bản quyền, căn giữa) ----------
 st.markdown(
     """
     <style>
@@ -760,12 +760,13 @@ st.markdown(
         background: rgba(0,0,0,0.04);
         color: #444;
         font-size: 12px;
-        text-align: right;
+        text-align: center;  /* 👈 căn giữa */
         z-index: 1000;
         border-top: 1px solid rgba(0,0,0,0.1);
+        width: 100%;
     }
     </style>
-    <div class="footer-dhn">© Bản quyền thuộc về <strong>TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh</strong></div>
+    <div class="footer-dhn">© Bản quyền thuộc về <strong>TS. DHN</strong></div>
     """,
     unsafe_allow_html=True
 )
