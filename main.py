@@ -683,7 +683,6 @@ if not gv_unlocked():
 # Điều hướng ở Sidebar
 with st.sidebar:
     st.markdown("---")
-    st.markdown("**📂 Điều hướng**")
     menu = st.radio(
         "Chọn mục",
         options=["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
@@ -722,3 +721,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
