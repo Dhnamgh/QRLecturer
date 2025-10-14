@@ -10,7 +10,7 @@ import re
 import base64
 import unicodedata
 from difflib import get_close_matches
-import datetime  # 👈 dùng module chuẩn, an toàn
+import datetime  # dùng module chuẩn để tránh bị shadow
 import pandas as pd
 import altair as alt
 
@@ -19,9 +19,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"
-WORKSHEET_NAME = "D25A"
-VN_TZ = datetime.timezone(datetime.timedelta(hours=7))  # 👈 timezone Việt Nam
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # ID file Google Sheets
+WORKSHEET_NAME = "D25C"  # Tên worksheet trong file Google Sheets
+VN_TZ = datetime.timezone(datetime.timedelta(hours=7))  # múi giờ Việt Nam
+
 # ===================== CHUẨN HÓA PRIVATE KEY & KẾT NỐI =====================
 @st.cache_resource
 def _get_gspread_client():
@@ -90,6 +91,9 @@ def normalize_name(name: str):
 
 def strip_accents(s: str) -> str:
     s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(s_char) != "Mn" for s_char in [s])
+    # Oops above; fix strip properly:
+    s = unicodedata.normalize("NFD", s)
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
     return unicodedata.normalize("NFC", s)
 
@@ -152,7 +156,7 @@ def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
             if (("thời gian" in hlow) or ("time" in hlow)) and re.search(rf"\b{buoi_idx}\b", hlow):
                 return idx
 
-    # 3) Không thấy -> đặt tiêu đề ở cột ngay phải (kể cả khi cột tiêu đề trống)
+    # 3) Không thấy -> đặt tiêu đề ở cột ngay phải
     sheet.update_cell(1, next_col, f"Thời gian {buoi_header}")
     return next_col
 
@@ -190,7 +194,7 @@ if qp.get("sv") != "1":
 # ===================== MÀN HÌNH SINH VIÊN (?sv=1&buoi=...) =====================
 if qp.get("sv") == "1":
     buoi_sv = qp.get("buoi", "Buổi 1")
-    lock_key = f"locked_{buoi_sv}"        # khóa theo từng buổi (theo session trình duyệt)
+    lock_key = f"locked_{buoi_sv}"        # khóa theo từng buổi (session trình duyệt)
     info_key = f"lock_info_{buoi_sv}"
 
     st.title("🎓 Điểm danh sinh viên")
@@ -240,7 +244,7 @@ if qp.get("sv") == "1":
                 # Chưa có -> tiến hành ghi ✅ và thời gian
                 sheet.update_cell(cell_mssv.row, col_buoi, "✅")
                 time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
-                now_str = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                now_str = datetime.datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
                 sheet.update_cell(cell_mssv.row, time_col, now_str)
 
                 msg = f"🎉 Điểm danh thành công! MSSV **{mssv}** ({now_str})."
@@ -256,80 +260,80 @@ if qp.get("sv") == "1":
 # ===================== MÀN HÌNH GIẢNG VIÊN & CÔNG CỤ =====================
 st.title("📋 Hệ thống điểm danh QR")
 
-if gv_unlocked():
-    tab_gv, tab_search, tab_stats = st.tabs(
-        ["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"]
+# Chặn CỨNG toàn bộ chức năng GV khi chưa đăng nhập
+if not gv_unlocked():
+    st.error("🔒 Bạn chưa đăng nhập Giảng viên. Vào **Sidebar → Đăng nhập Giảng viên** để mở khóa.")
+    st.stop()
+
+# ĐÃ đăng nhập thì mới render các tab của GV
+tab_gv, tab_search, tab_stats = st.tabs(
+    ["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"]
+)
+
+# ---------- TAB GIẢNG VIÊN ----------
+with tab_gv:
+    st.subheader("📸 Tạo mã QR điểm danh (động mỗi 30 giây)")
+    buoi = st.selectbox(
+        "Chọn buổi học",
+        ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
+        index=0,
+        key="buoi_gv_select",
     )
-else:
-    st.info("🔒 Tab Giảng viên đang khóa. Vào **Sidebar → Đăng nhập Giảng viên** để mở.")
-    tab_gv = None
-    tab_search, tab_stats = st.tabs(["🔎 Tìm kiếm", "📊 Thống kê"])
 
-# ---------- TAB GIẢNG VIÊN (chỉ hiển thị khi đã đăng nhập) ----------
-if tab_gv is not None:
-    with tab_gv:
-        st.subheader("📸 Tạo mã QR điểm danh (động mỗi 30 giây)")
-        buoi = st.selectbox(
-            "Chọn buổi học",
-            ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
-            index=0,
-            key="buoi_gv_select",
-        )
+    auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
+    show_link = st.toggle(
+        "🔎 Hiển thị link chi tiết (ẩn/hiện)", value=False,
+        help="Bật khi cần xem toàn bộ URL để debug"
+    )
+    go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
-        auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
-        show_link = st.toggle(
-            "🔎 Hiển thị link chi tiết (ẩn/hiện)", value=False,
-            help="Bật khi cần xem toàn bộ URL để debug"
-        )
-        go = st.button("Tạo mã QR", use_container_width=True, type="primary")
+    if go:
+        # placeholder cố định -> mỗi vòng ghi đè, không sinh widget mới
+        qr_slot = st.empty()       # ảnh QR
+        link_slot = st.empty()     # chỗ hiển thị link (nếu bật)
+        timer_slot = st.empty()    # đồng hồ đếm ngược
 
-        if go:
-            # placeholder cố định -> mỗi vòng ghi đè, không sinh widget mới
-            qr_slot = st.empty()       # ảnh QR
-            link_slot = st.empty()     # chỗ hiển thị link (nếu bật)
-            timer_slot = st.empty()    # đồng hồ đếm ngược
+        try:
+            while True:
+                now = int(time.time())
+                slot_val = now // 30
+                token = f"{slot_val}"
+                base_url = st.secrets["google_service_account"].get(
+                    "app_base_url", "https://qrlecturer.streamlit.app"
+                )
+                qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
 
-            try:
-                while True:
-                    now = int(time.time())
-                    slot_val = now // 30
-                    token = f"{slot_val}"
-                    base_url = st.secrets["google_service_account"].get(
-                        "app_base_url", "https://qrlecturer.streamlit.app"
-                    )
-                    qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
+                # Tạo ảnh QR
+                qr = qrcode.make(qr_data)
+                buf = io.BytesIO()
+                qr.save(buf, format="PNG")
+                buf.seek(0)
+                img = Image.open(buf)
 
-                    # Tạo ảnh QR
-                    qr = qrcode.make(qr_data)
-                    buf = io.BytesIO()
-                    qr.save(buf, format="PNG")
-                    buf.seek(0)
-                    img = Image.open(buf)
+                # Cập nhật ảnh QR
+                qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=260)
 
-                    # Cập nhật ảnh QR
-                    qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=260)
+                # Hiển thị link (click được) + ô copy
+                if show_link:
+                    with link_slot.container():
+                        st.markdown(
+                            f'<a href="{qr_data}" target="_blank" rel="noopener noreferrer">🌐 Mở link hiện tại</a>',
+                            unsafe_allow_html=True
+                        )
+                        st.code(qr_data)
+                else:
+                    link_slot.empty()
 
-                    # Hiển thị link (click được) + ô copy (không là widget nên không lỗi ID)
-                    if show_link:
-                        with link_slot.container():
-                            st.markdown(
-                                f'<a href="{qr_data}" target="_blank" rel="noopener noreferrer">🌐 Mở link hiện tại</a>',
-                                unsafe_allow_html=True
-                            )
-                            st.code(qr_data)
-                    else:
-                        link_slot.empty()
+                # Đồng hồ đếm ngược
+                remain = 30 - (now % 30)
+                timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
-                    # Đồng hồ đếm ngược
-                    remain = 30 - (now % 30)
-                    timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
+                if not auto:
+                    break
+                time.sleep(1)
 
-                    if not auto:
-                        break
-                    time.sleep(1)
-
-            except Exception as e:
-                st.error(f"❌ Lỗi khi tạo QR: {e}")
+        except Exception as e:
+            st.error(f"❌ Lỗi khi tạo QR: {e}")
 
 # ---------- TAB TÌM KIẾM ----------
 with tab_search:
@@ -414,7 +418,7 @@ with tab_stats:
             })
         df = pd.DataFrame(rows)
 
-        # Biểu đồ cột: mỗi Tổ một màu, có nhãn "Số (Tỷ lệ%)" + tooltip khi rê chuột
+        # Biểu đồ cột: mỗi Tổ một màu, có nhãn + tooltip
         if not df.empty:
             base = alt.Chart(df).encode(
                 x=alt.X('Tổ:N', sort=None, title='Tổ'),
@@ -435,8 +439,7 @@ with tab_stats:
         else:
             st.info("Không có dữ liệu để vẽ biểu đồ.")
 
-
-        # Bảng thống kê đặt dưới biểu đồ
+        # Bảng thống kê dưới biểu đồ
         table = []
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
@@ -451,9 +454,5 @@ with tab_stats:
                 "Tỷ lệ có mặt": rate_g
             })
         st.dataframe(table, use_container_width=True)
-
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-
-
-
