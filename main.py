@@ -194,47 +194,35 @@ with tab_gv:
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
     if go:
-        # Tạo 3 placeholder CỐ ĐỊNH để cập nhật nội dung (tránh tạo widget mới mỗi vòng)
-        qr_slot = st.empty()       # hiển thị ảnh QR
-        ctrl_slot = st.empty()     # nhóm nút (download/link/input)
+        # 3 placeholder cố định để cập nhật (không tạo widget mới mỗi vòng)
+        qr_slot = st.empty()       # ảnh QR
+        link_slot = st.empty()     # chỗ hiển thị link (nếu bật)
         timer_slot = st.empty()    # đồng hồ đếm ngược
 
         try:
             while True:
                 now = int(time.time())
-                slot = now // 30               # đổi token mỗi 30s
+                slot = now // 30                      # đổi token mỗi 30s
                 token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
                 )
                 qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
 
-                # Tạo ảnh QR (bộ nhớ tạm)
+                # Tạo ảnh QR
                 qr = qrcode.make(qr_data)
-                buf = io.BytesIO()
-                qr.save(buf, format="PNG")
-                buf.seek(0)
+                buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
                 img = Image.open(buf)
 
-                # CẬP NHẬT ẢNH vào placeholder (KHÔNG tạo widget mới)
+                # Cập nhật ảnh QR
                 qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=260)
 
-                # CẬP NHẬT NHÓM NÚT vào placeholder (mỗi vòng ghi đè, không trùng key)
-                with ctrl_slot.container():
-                    cols = st.columns([1, 1, 2])
-                    with cols[0]:
-                        st.download_button(
-                            "📎 Tải link",
-                            qr_data.encode("utf-8"),
-                            file_name="qr_link.txt",
-                            use_container_width=True,
-                            # Không cần key động vì ctrl_slot ghi đè mỗi vòng
-                        )
-                    with cols[1]:
-                        st.link_button("🌐 Mở link", qr_data, use_container_width=True)
-                    with cols[2]:
-                        if show_link:
-                            st.text_input("URL hiện tại", value=qr_data, label_visibility="visible")
+                # Chỉ hiển thị link nếu bật show_link (dùng code/textarea để dễ copy)
+                if show_link:
+                    with link_slot.container():
+                        st.text_area("URL hiện tại", qr_data, height=80)
+                else:
+                    link_slot.empty()
 
                 # Đồng hồ đếm ngược
                 remain = 30 - (now % 30)
@@ -242,11 +230,11 @@ with tab_gv:
 
                 if not auto:
                     break
-
                 time.sleep(1)
 
         except Exception as e:
             st.error(f"❌ Lỗi khi tạo QR: {e}")
+
 
 # ---------- TAB TÌM KIẾM ----------
 with tab_search:
@@ -328,6 +316,7 @@ with tab_stats:
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
 
 
