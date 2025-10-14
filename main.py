@@ -468,109 +468,211 @@ with tab_stats:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
 # ---------- TAB TRỢ LÝ AI ----------
 with tab_ai:
-    st.subheader("🤖 Trợ lý AI phân tích điểm danh")
-    st.caption("Nhập câu hỏi bằng tiếng Việt tự nhiên. Ví dụ: "
-               "“Buổi 2 có bao nhiêu sinh viên đi học?”, "
-               "“Sinh viên nào vắng nhiều nhất?”, "
-               "hoặc “Tỷ lệ chuyên cần trung bình là bao nhiêu?”")
+    st.subheader("🤖 Trợ lý AI phân tích điểm danh (nội bộ, không dùng API ngoài)")
+    st.caption("Ví dụ: “Buổi 3 có bao nhiêu sinh viên đi học?”, "
+               "“Tổ 2 vắng mấy người trong buổi 5?”, "
+               "“Ai vắng nhiều nhất?”, “Tỷ lệ chuyên cần trung bình?”, "
+               "“MSSV 5112xxxx đi mấy buổi?”, “Nguyen Van A có vắng không?”")
 
-    user_q = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi ở đây...")
+    q_raw = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi bằng tiếng Việt...")
 
-    if st.button("Hỏi trợ lý AI", use_container_width=True) and user_q.strip():
-        try:
-            sheet = get_sheet()
-            records = load_records(sheet)
-            if not records:
-                st.warning("Không tìm thấy dữ liệu điểm danh trong Sheet.")
-                st.stop()
+    def _safe_lower(s: str) -> str:
+        return (s or "").strip().lower()
 
-            # Chuẩn hoá
-            q = user_q.lower().strip()
-            headers = sheet.row_values(1)
-            buoi_cols = [h for h in headers if h.lower().startswith("buổi ")]
-            # Tạo bảng tổng hợp
-            summary = {}
+    def _extract_buoi(text: str, buoi_cols: list[str]) -> str | None:
+        t = _safe_lower(text)
+        # match theo tên cột
+        for b in buoi_cols:
+            if _safe_lower(b) in t:
+                return b
+        # match theo số "buổi d+"
+        m = re.search(r"buổi\s*(\d+)", t)
+        if m:
+            num = m.group(1)
             for b in buoi_cols:
-                present = sum(1 for r in records if str(r.get(b, "")).strip() != "")
-                total = len(records)
-                summary[b] = {"present": present, "absent": total - present, "total": total}
+                if re.search(rf"\b{num}\b", _safe_lower(b)):
+                    return b
+        return None
 
-            def find_buoi_in_text(text):
-                for b in buoi_cols:
-                    if b.lower() in text:
-                        return b
-                # thử match số: "buổi 3"
-                import re
-                m = re.search(r"buổi\s*(\d+)", text)
-                if m:
-                    num = m.group(1)
-                    for b in buoi_cols:
-                        if num in b:
-                            return b
-                return None
+    def _extract_to(text: str) -> str | None:
+        # tìm "tổ X"
+        m = re.search(r"tổ\s*([A-Za-z0-9]+)", _safe_lower(text))
+        if m:
+            return m.group(1)
+        return None
 
-            ans = ""
-            b = find_buoi_in_text(q)
+    def _looks_like_mssv(s: str) -> bool:
+        s = re.sub(r"\D", "", s or "")
+        return len(s) >= 7  # tuỳ trường, bạn đổi ngưỡng nếu cần
 
-            # --- Câu hỏi dạng thống kê ---
-            if "tổng" in q or "bao nhiêu" in q or "đi học" in q:
-                if b:
-                    p = summary[b]["present"]
-                    t = summary[b]["total"]
-                    ans = f"✅ {b}: {p}/{t} sinh viên có mặt ({p/t*100:.1f}%)."
+    def _extract_mssv(text: str) -> str | None:
+        m = re.search(r"(?:mssv|sv|student)\s*([0-9]{6,})", _safe_lower(text))
+        if m:
+            return m.group(1)
+        # nếu người dùng chỉ gõ dính số
+        m2 = re.search(r"\b([0-9]{7,})\b", _safe_lower(text))
+        if m2:
+            return m2.group(1)
+        return None
+
+    def _find_student_row(records: list[dict], mssv_or_name: str) -> dict | None:
+        # ưu tiên MSSV
+        if _looks_like_mssv(mssv_or_name):
+            ms = re.sub(r"\D", "", mssv_or_name)
+            for r in records:
+                if re.sub(r"\D", "", str(r.get("MSSV",""))) == ms:
+                    return r
+        # tìm theo tên gần đúng (không dấu, lower)
+        target = norm_search(mssv_or_name)
+        names = [r.get("Họ và Tên","") for r in records]
+        name_map = {n: r for n, r in zip(names, records)}
+        # chứa cụm
+        for n in names:
+            if target and target in norm_search(n):
+                return name_map[n]
+        # gần đúng
+        cand = get_close_matches(mssv_or_name, names, n=1, cutoff=0.6)
+        if cand:
+            return name_map[cand[0]]
+        return None
+
+    def _answer(q: str) -> str:
+        sheet = get_sheet()
+        records = load_records(sheet)
+        if not records:
+            return "Không có dữ liệu trong Sheet."
+
+        headers = sheet.row_values(1)
+        buoi_cols = [h for h in headers if _safe_lower(h).startswith("buổi ")]
+        if not buoi_cols:
+            return "Không tìm thấy các cột 'Buổi ...' trong Sheet."
+
+        # dựng summary nhanh
+        total_sv = len(records)
+        present_per_buoi = {b: sum(1 for r in records if attendance_flag(r.get(b,""))) for b in buoi_cols}
+        absent_per_buoi  = {b: total_sv - present_per_buoi[b] for b in buoi_cols}
+
+        qt = _safe_lower(q)
+
+        # 1) hỏi theo buổi: có mặt / vắng / tỷ lệ
+        b = _extract_buoi(qt, buoi_cols)
+        if b and (("bao nhiêu" in qt) or ("đi học" in qt) or ("có mặt" in qt) or ("vắng" in qt) or ("tỷ lệ" in qt)):
+            p = present_per_buoi[b]; a = absent_per_buoi[b]
+            rate = p/total_sv*100 if total_sv else 0
+            return f"{b}: {p}/{total_sv} có mặt, {a} vắng ({rate:.1f}%)."
+
+        # 2) hỏi theo tổ trong một buổi
+        if "tổ" in qt:
+            b2 = b or buoi_cols[-1]  # nếu không nêu buổi, lấy buổi gần nhất (cột cuối)
+            want_to = _extract_to(qt)
+            group_stats = {}
+            for r in records:
+                g = str(r.get("Tổ","")).strip() or "Chưa rõ"
+                if g not in group_stats:
+                    group_stats[g] = {"present":0,"absent":0}
+                if attendance_flag(r.get(b2,"")):
+                    group_stats[g]["present"] += 1
                 else:
-                    total_present = sum(v["present"] for v in summary.values())
-                    total_all = sum(v["total"] for v in summary.values())
-                    ans = f"Toàn bộ các buổi có {total_present} lượt điểm danh / {total_all} SV-buổi."
+                    group_stats[g]["absent"] += 1
+            if want_to and want_to in group_stats:
+                v = group_stats[want_to]
+                tot = v["present"] + v["absent"]
+                rate = v["present"]/tot*100 if tot else 0
+                return f"{b2} - Tổ {want_to}: {v['present']}/{tot} có mặt ({rate:.1f}%)."
+            # nếu không chỉ định tổ → trả danh sách các tổ
+            lines = []
+            for g, v in sorted(group_stats.items()):
+                tot = v["present"]+v["absent"]
+                rate = v["present"]/tot*100 if tot else 0
+                lines.append(f"Tổ {g}: {v['present']}/{tot} ({rate:.1f}%)")
+            return f"📊 {b2} theo tổ:\n" + "\n".join(lines)
 
-            elif "tổ" in q:
-                b = b or buoi_cols[-1]
-                group_stats = {}
-                for r in records:
-                    g = str(r.get("Tổ", "")).strip() or "Chưa rõ"
-                    if g not in group_stats:
-                        group_stats[g] = {"present": 0, "absent": 0}
-                    if str(r.get(b, "")).strip() != "":
-                        group_stats[g]["present"] += 1
-                    else:
-                        group_stats[g]["absent"] += 1
-                rows = [f"Tổ {g}: {v['present']} có mặt / {v['present']+v['absent']} SV" 
-                        for g, v in group_stats.items()]
-                ans = f"📊 Thống kê theo tổ cho {b}:\n" + "\n".join(rows)
+        # 3) sinh viên vắng nhiều nhất / hay nghỉ
+        if ("vắng nhiều" in qt) or ("hay nghỉ" in qt) or ("nghỉ nhiều" in qt) or ("top vắng" in qt):
+            counts = {}
+            for r in records:
+                vangs = sum(1 for b in buoi_cols if not attendance_flag(r.get(b,"")))
+                counts[r.get("Họ và Tên","(không tên)")] = vangs
+            top5 = sorted(counts.items(), key=lambda x: -x[1])[:5]
+            return "😴 Top vắng nhiều: \n" + "\n".join([f"- {n}: {v} buổi" for n,v in top5])
 
-            elif "vắng nhiều" in q or "hay nghỉ" in q:
-                counts = {}
-                for r in records:
-                    vangs = sum(1 for b in buoi_cols if str(r.get(b, "")).strip() == "")
-                    counts[r["Họ và Tên"]] = vangs
-                top5 = sorted(counts.items(), key=lambda x: -x[1])[:5]
-                ans = "😴 Sinh viên vắng nhiều nhất:\n" + "\n".join([f"{n}: {v} buổi" for n, v in top5])
+        # 4) tỷ lệ chuyên cần trung bình
+        if ("chuyên cần" in qt) or ("tỷ lệ" in qt and not b):
+            total_present_all = sum(present_per_buoi.values())
+            total_slots = total_sv * max(1, len(buoi_cols))
+            rate = total_present_all/total_slots*100 if total_slots else 0
+            return f"📈 Tỷ lệ chuyên cần trung bình toàn lớp: {rate:.1f}%."
 
-            elif "chuyên cần" in q or "tỷ lệ" in q:
-                total_present = sum(v["present"] for v in summary.values())
-                total_all = sum(v["total"] for v in summary.values())
-                rate = total_present / total_all * 100 if total_all else 0
-                ans = f"📈 Tỷ lệ chuyên cần trung bình của lớp là {rate:.1f}%."
+        # 5) danh sách vắng quá N buổi
+        m = re.search(r"vắng\s+quá\s+(\d+)\s*buổi", qt)
+        if m:
+            limit = int(m.group(1))
+            rows = []
+            for r in records:
+                vangs = sum(1 for b in buoi_cols if not attendance_flag(r.get(b,"")))
+                if vangs > limit:
+                    rows.append(f"- {r.get('Họ và Tên','(không tên)')} ({r.get('MSSV','?')}): {vangs} buổi")
+            return "Danh sách vắng quá {} buổi:\n".format(limit) + ("\n".join(rows) if rows else "Không có.")
 
-            elif "danh sách" in q and "vắng" in q:
-                limit = 2
-                counts = {}
-                for r in records:
-                    vangs = sum(1 for b in buoi_cols if str(r.get(b, "")).strip() == "")
-                    if vangs > limit:
-                        counts[r["Họ và Tên"]] = vangs
-                if counts:
-                    ans = f"Sinh viên vắng quá {limit} buổi:\n" + "\n".join([f"{k}: {v}" for k, v in counts.items()])
-                else:
-                    ans = f"Không có sinh viên nào vắng quá {limit} buổi."
+        # 6) tình hình 1 sinh viên (bằng MSSV hoặc tên)
+        if ("mssv" in qt) or re.search(r"\b[0-9]{7,}\b", qt) or any(k in qt for k in ["sv ","sinh viên","sinhvien"]):
+            # lấy từ câu hỏi: mssv hoặc tên
+            mssv = _extract_mssv(qt)
+            target = mssv if mssv else q_raw  # nếu không có mssv, dùng tên trong câu hỏi
+            row = _find_student_row(records, target)
+            if not row:
+                return "Không tìm thấy sinh viên tương ứng."
+            name = row.get("Họ và Tên","(không tên)")
+            ms   = row.get("MSSV","?")
+            marks = []
+            presents = 0
+            for b in buoi_cols:
+                flag = "✅" if attendance_flag(row.get(b,"")) else "❌"
+                if flag=="✅":
+                    presents += 1
+                marks.append(f"{b}:{flag}")
+            return f"{name} ({ms}) — {presents}/{len(buoi_cols)} buổi có mặt.\n" + ", ".join(marks)
 
-            else:
-                ans = "🤔 Xin lỗi, tôi chưa hiểu câu hỏi này. Hãy thử hỏi dạng: “Buổi 3 có bao nhiêu SV đi học?” hoặc “Tỷ lệ chuyên cần trung bình?”."
+        # 7) tổng hợp mặc định khi không hiểu
+        # đoán câu kiểu "bao nhiêu sv đi học buổi gần đây"
+        if ("bao nhiêu" in qt) or ("đi học" in qt) or ("có mặt" in qt):
+            b3 = b or buoi_cols[-1]
+            p = present_per_buoi[b3]
+            return f"{b3}: {p}/{total_sv} sinh viên có mặt (~{p/total_sv*100:.1f}%)."
 
-            st.markdown(f"**Trả lời:**\n\n{ans}")
+        return ("🤔 Tôi chưa hiểu câu hỏi. Bạn có thể hỏi: "
+                "“Buổi 3 có bao nhiêu SV đi học?”, "
+                "“Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
+                "“Ai vắng nhiều nhất?”, "
+                "“MSSV 5112xxxx đi mấy buổi?”")
 
+    if st.button("Hỏi trợ lý", use_container_width=True) and q_raw.strip():
+        try:
+            st.markdown(f"**Trả lời:**\n\n{_answer(q_raw)}")
         except Exception as e:
             st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
+
+# ---------- FOOTER (bản quyền) ----------
+st.markdown(
+    """
+    <style>
+    .footer-dhn {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        padding: 8px 16px;
+        background: rgba(0,0,0,0.04);
+        color: #444;
+        font-size: 12px;
+        text-align: right;
+        z-index: 1000;
+        border-top: 1px solid rgba(0,0,0,0.1);
+    }
+    </style>
+    <div class="footer-dhn">© Bản quyền thuộc về <strong>TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh</strong></div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 
 
