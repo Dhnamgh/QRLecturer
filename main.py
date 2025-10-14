@@ -163,7 +163,7 @@ def token_valid(t_str: str, step=30, strict=True) -> bool:
 
 # ===================== NỘI DUNG “TAB” (render ở Content, chọn ở Sidebar) =====================
 def render_tab_gv():
-    st.subheader("📸 Tạo mã QR điểm danh (động mỗi 30 giây)")
+    
     buoi = st.selectbox(
         "Chọn buổi học",
         ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
@@ -331,8 +331,11 @@ def render_tab_stats():
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
 
-# ===== Trợ lý AI (nâng cấp) – chạy nội bộ, không dùng API ngoài =====
+# ===== Trợ lý AI =====
 def render_tab_ai():
+    import unicodedata, re, datetime
+    from difflib import get_close_matches
+
     st.subheader("🤖 Trợ lý AI ")
     st.caption(
         "Ví dụ: “Buổi 3 có bao nhiêu SV đi học?”, “Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
@@ -341,8 +344,8 @@ def render_tab_ai():
     )
     q_raw = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi tiếng Việt (có thể gõ không dấu)...")
 
-    # ===== Helpers NLP =====
-    def lv_norm(s):
+    # ===== Helpers NLP cơ bản (no API) =====
+    def lv_norm(s: str) -> str:
         s = (s or "").strip().lower()
         s = unicodedata.normalize("NFD", s)
         s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
@@ -350,7 +353,7 @@ def render_tab_ai():
         s = re.sub(r"\s+", " ", s)
         return s
 
-    def fuzzy_has(text_norm, variants, thresh=0.8):
+    def fuzzy_has(text_norm: str, variants: list[str], thresh: float = 0.8) -> bool:
         from difflib import SequenceMatcher
         for v in variants:
             v2 = lv_norm(v)
@@ -360,12 +363,13 @@ def render_tab_ai():
                 return True
         return False
 
-    def extract_buoi(text_norm, buoi_cols):
-        # khớp theo tên cột
+    def extract_buoi(text_norm: str, buoi_cols: list[str]) -> str | None:
+        # khớp trực tiếp theo tên cột đã bỏ dấu
         for b in buoi_cols:
             if lv_norm(b) in text_norm:
                 return b
-        m = re.search(r"buoi\s*(\d+)", text_norm)
+        # khớp "buoi <so>"
+        m = re.search(r"\bbuoi\s*(\d+)\b", text_norm)
         if m:
             num = m.group(1)
             for b in buoi_cols:
@@ -373,26 +377,28 @@ def render_tab_ai():
                     return b
         return None
 
-    def extract_to(text_norm):
+    def extract_to(text_norm: str) -> str | None:
         m = re.search(r"\bto\s*([a-z0-9]+)\b", text_norm)
         return m.group(1) if m else None
 
-    def looks_like_mssv(s):
+    def looks_like_mssv(s: str) -> bool:
         s = re.sub(r"\D", "", s or "")
         return len(s) >= 7
 
-    def extract_mssv(text_norm):
+    def extract_mssv(text_norm: str) -> str | None:
         m = re.search(r"(?:mssv|sv|student)\s*([0-9]{6,})", text_norm)
         if m: return m.group(1)
         m2 = re.search(r"\b([0-9]{7,})\b", text_norm)
         return m2.group(1) if m2 else None
 
-    def find_student_row(records, mssv_or_name):
+    def find_student_row(records: list[dict], mssv_or_name: str) -> dict | None:
+        # ưu tiên MSSV
         if looks_like_mssv(mssv_or_name):
             ms = re.sub(r"\D", "", mssv_or_name)
             for r in records:
                 if re.sub(r"\D", "", str(r.get("MSSV",""))) == ms:
                     return r
+        # tên gần đúng (không dấu)
         target = lv_norm(mssv_or_name)
         names = [r.get("Họ và Tên","") for r in records]
         name_map = {n: r for n, r in zip(names, records)}
@@ -402,7 +408,7 @@ def render_tab_ai():
         cand = get_close_matches(mssv_or_name, names, n=1, cutoff=0.6)
         return name_map[cand[0]] if cand else None
 
-    def extract_name_candidate(text_norm):
+    def extract_name_candidate(text_norm: str) -> str | None:
         stop = {
             "buoi","buổi","to","tổ","mssv","sv","student",
             "di","đi","hoc","học","co","có","mat","mặt","vang","vắng",
@@ -416,23 +422,46 @@ def render_tab_ai():
         name = " ".join(remain).strip()
         return name if name else None
 
-    def find_time_col_index(headers, buoi_col, buoi_header):
-        n = len(headers)
-        nxt = buoi_col + 1
-        if nxt <= n:
-            h = (headers[nxt - 1] or "").lower()
-            if "thời gian" in h or "time" in h:
-                return nxt
-        m = re.search(r"(\d+)", buoi_header or "", flags=re.I)
-        idx = m.group(1) if m else None
-        if idx:
-            for i, h in enumerate(headers, start=1):
-                hl = (h or "").lower()
-                if (("thời gian" in hl) or ("time" in hl)) and re.search(rf"\b{idx}\b", hl):
-                    return i
-        return None
+    # ===== Dò cột Buổi + Thời gian (theo header bạn cung cấp) =====
+    def detect_buoi_columns(headers: list[str]) -> list[str]:
+        cols = []
+        for h in headers:
+            hn = norm_search(h).replace("_", " ").replace("-", " ")
+            if re.match(r"^(b|bu|buoi)\s*\d+$", hn):
+                cols.append(h); continue
+            if hn.startswith("buoi ") and re.search(r"\d+", hn):
+                cols.append(h); continue
+            if norm_search(h).startswith("buổi ") and re.search(r"\d+", norm_search(h)):
+                cols.append(h); continue
+        # loại trùng
+        seen, out = set(), []
+        for h in cols:
+            if h not in seen:
+                seen.add(h); out.append(h)
+        return out
 
-    def parse_time(val):
+    def build_time_map(headers: list[str], buoi_cols: list[str]) -> dict[str,int|None]:
+        name_to_idx = {h: i+1 for i, h in enumerate(headers)}
+        time_map = {}
+        for b in buoi_cols:
+            idx = name_to_idx[b]
+            m = re.search(r"(\d+)", b)
+            num = m.group(1) if m else None
+            tcol = None
+            if num:
+                for i, h in enumerate(headers, start=1):
+                    hn = norm_search(h)
+                    if (("thời gian" in h.lower()) or ("thoi gian" in hn) or ("time" in h.lower())) and re.search(rf"\b{num}\b", hn):
+                        tcol = i; break
+            if not tcol and idx < len(headers):
+                right = headers[idx]  # cột ngay bên phải (1-based -> headers[idx])
+                hn = norm_search(right)
+                if ("thời gian" in right.lower()) or ("time" in right.lower()) or ("thoi gian" in hn):
+                    tcol = idx + 1
+            time_map[b] = tcol
+        return time_map
+
+    def parse_time(val: str) -> datetime.datetime | None:
         if not val: return None
         val = str(val).strip()
         fmts = ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%H:%M:%S", "%H:%M"]
@@ -447,7 +476,7 @@ def render_tab_ai():
                 continue
         return None
 
-    def answer(q_user):
+    def answer(q_user: str) -> str:
         qn = norm_search(q_user)  # bỏ dấu + lower
         sheet = get_sheet()
         records = load_records(sheet)
@@ -455,21 +484,18 @@ def render_tab_ai():
             return "Không có dữ liệu trong Sheet."
 
         headers = sheet.row_values(1)
-        buoi_cols = [h for h in headers if norm_search(h).startswith("buổi ")]
+        buoi_cols = detect_buoi_columns(headers)
         if not buoi_cols:
             return "Không tìm thấy các cột 'Buổi ...' trong Sheet."
-
+        time_map = build_time_map(headers, buoi_cols)
         total_sv = len(records)
-        def col_idx_of(header_name):  # 1-based
-            return headers.index(header_name) + 1
 
         # ------ sớm nhất / muộn nhất theo cột thời gian ------
-        ask_earliest = fuzz = fuzzy_has(qn, ["som nhat", "sớm nhất", "den som nhat", "som nhut", "somnha"])
+        ask_earliest = fuzzy_has(qn, ["som nhat", "sớm nhất", "den som nhat", "som nhut", "somnha"])
         ask_latest   = fuzzy_has(qn, ["muon nhat", "muộn nhất", "den muon nhat", "den tre nhat", "tre nhat"])
         if ask_earliest or ask_latest:
             b = extract_buoi(qn, buoi_cols) or buoi_cols[-1]
-            b_col = col_idx_of(b)
-            t_col = find_time_col_index(headers, b_col, b)
+            t_col = time_map.get(b)
             if not t_col:
                 return f"Không tìm thấy cột thời gian ứng với “{b}”."
 
@@ -595,11 +621,12 @@ def render_tab_ai():
                 "“Ai đi học sớm nhất buổi 2?”, “Buổi 1 Thái có đi học không?”, "
                 "“Buổi 3 có bao nhiêu SV đi học?”, “MSSV 5112xxxx đi mấy buổi?”")
 
-    if st.button("Hỏi trợ lý AI", use_container_width=True) and q_raw.strip():
+    if st.button("Hỏi trợ lý", use_container_width=True) and q_raw.strip():
         try:
             st.markdown(f"**Trả lời:**\n\n{answer(q_raw)}")
         except Exception as e:
             st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
+
 
 # ===================== GIAO DIỆN: SV / GV =====================
 qp = get_query_params()
@@ -721,5 +748,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
