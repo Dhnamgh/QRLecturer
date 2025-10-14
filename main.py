@@ -16,8 +16,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- ID file Sheet của bạn
-WORKSHEET_NAME = "D25A"  # <-- tên sheet con trong file (ví dụ: D25A)
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # ID file Sheet của bạn
+WORKSHEET_NAME = "D25A"  # Tên sheet con trong Google Sheets
 
 # ===================== HÀM CHUẨN HÓA PRIVATE KEY & KẾT NỐI =====================
 @st.cache_resource
@@ -63,7 +63,14 @@ def _get_gspread_client():
         )
 
     # 4. Ghép lại PEM chuẩn
-    pk_clean = header + "\n" + "\n".join(body[i:i+64] for i in range(0, len(body), 64)) + "\n" + footer + "\n"
+    pk_clean = (
+        header
+        + "\n"
+        + "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        + "\n"
+        + footer
+        + "\n"
+    )
     cred["private_key"] = pk_clean
 
     creds = Credentials.from_service_account_info(cred, scopes=SCOPES)
@@ -129,7 +136,6 @@ def find_student_candidates(records, query: str):
 def attendance_flag(val):
     return str(val).strip() != ""
 
-
 # ===================== GIAO DIỆN STREAMLIT =====================
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 qp = get_query_params()
@@ -166,7 +172,9 @@ if qp.get("sv") == "1":
 # ===================== MÀN HÌNH GIẢNG VIÊN =====================
 st.title("📋 Hệ thống điểm danh QR")
 
-tab_gv, tab_search, tab_stats = st.tabs(["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"])
+tab_gv, tab_search, tab_stats = st.tabs(
+    ["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê"]
+)
 
 # ---------- TAB GIẢNG VIÊN ----------
 with tab_gv:
@@ -179,50 +187,59 @@ with tab_gv:
     )
 
     auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
+    show_link = st.toggle(
+        "🔎 Hiển thị link chi tiết (ẩn/hiện)", value=False,
+        help="Bật khi cần xem toàn bộ URL để debug"
+    )
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
 
-   if go:
-    container = st.empty()
-    timer = st.empty()
-    try:
-        while True:
-            now = int(time.time())
-            slot = now // 30
-            token = f"{slot}"
-            base_url = st.secrets["google_service_account"].get(
-                "app_base_url", "https://qrlecturer.streamlit.app"
-            )
-            qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
+    if go:
+        container = st.empty()
+        timer = st.empty()
+        try:
+            while True:
+                now = int(time.time())
+                slot = now // 30
+                token = f"{slot}"
+                base_url = st.secrets["google_service_account"].get(
+                    "app_base_url", "https://qrlecturer.streamlit.app"
+                )
+                qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
 
-            # Tạo ảnh QR
-            qr = qrcode.make(qr_data)
-            buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
-            img = Image.open(buf)
+                # Tạo ảnh QR
+                qr = qrcode.make(qr_data)
+                buf = io.BytesIO()
+                qr.save(buf, format="PNG")
+                buf.seek(0)
+                img = Image.open(buf)
 
-            # Giao diện gọn (không spam link), có nút và tùy chọn xem chi tiết
-            with container.container():
-                st.image(img, caption="📱 Quét mã để điểm danh", width=260)
-                cols = st.columns([1,1,2])
-                with cols[0]:
-                    st.download_button("📎 Tải link", qr_data.encode("utf-8"),
-                                       file_name="qr_link.txt", use_container_width=True)
-                with cols[1]:
-                    st.link_button("🌐 Mở link", qr_data, use_container_width=True)
-                with cols[2]:
-                    if show_link:
-                        # Hiển thị gọn + có thể copy
-                        st.text_input("URL hiện tại", value=qr_data, label_visibility="visible")
+                # Hiển thị QR và các nút chức năng
+                with container.container():
+                    st.image(img, caption="📱 Quét mã để điểm danh", width=260)
+                    cols = st.columns([1, 1, 2])
+                    with cols[0]:
+                        st.download_button(
+                            "📎 Tải link", qr_data.encode("utf-8"),
+                            file_name="qr_link.txt", use_container_width=True
+                        )
+                    with cols[1]:
+                        st.link_button("🌐 Mở link", qr_data, use_container_width=True)
+                    with cols[2]:
+                        if show_link:
+                            st.text_input(
+                                "URL hiện tại", value=qr_data,
+                                label_visibility="visible"
+                            )
 
-            remain = 30 - (now % 30)
-            timer.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
+                remain = 30 - (now % 30)
+                timer.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
-            if not auto:
-                break
-            time.sleep(1)
-    except Exception as e:
-        st.error(f"❌ Lỗi khi tạo QR: {e}")
+                if not auto:
+                    break
+                time.sleep(1)
 
-
+        except Exception as e:
+            st.error(f"❌ Lỗi khi tạo QR: {e}")
 
 # ---------- TAB TÌM KIẾM ----------
 with tab_search:
@@ -290,10 +307,8 @@ with tab_stats:
         table = []
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
-            rate_g = f"{(v['present']/total_g*100):.1f}%" if total_g else "-"
+            rate_g = f"{(v['present"]/total_g*100):.1f}%" if total_g else "-"
             table.append({"Tổ": g, "Có mặt": v["present"], "Vắng": v["absent"], "Tỷ lệ có mặt": rate_g})
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-
-
