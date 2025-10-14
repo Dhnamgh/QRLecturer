@@ -11,6 +11,20 @@ import base64
 import unicodedata
 from difflib import get_close_matches
 import datetime  # dùng module chuẩn để tránh shadow
+def current_slot(now=None, step=30):
+    import time as _t
+    return int((_t.time() if now is None else now) // step)
+
+def token_valid(t_str: str, step=30, strict=True) -> bool:
+    # strict=True: bắt buộc đúng slot hiện tại (không ±1)
+    if not t_str or not str(t_str).isdigit():
+        return False
+    t = int(t_str)
+    now_slot = current_slot(step=step)
+    if strict:
+        return t == now_slot
+    # lỡ mạng trễ có thể nới lỏng ±1 (không khuyến nghị)
+    return abs(t - now_slot) <= 1
 
 # ===================== CẤU HÌNH GOOGLE SHEETS =====================
 SCOPES = [
@@ -198,17 +212,41 @@ qp = get_query_params()
 # ===================== MÀN HÌNH SINH VIÊN =====================
 if qp.get("sv") == "1":
     buoi_sv = qp.get("buoi", "Buổi 1")
+    token_qr = qp.get("t", "")  # lấy token từ QR (đổi mỗi 30s)
     lock_key = f"locked_{buoi_sv}"
     info_key = f"lock_info_{buoi_sv}"
 
     st.title("🎓 Điểm danh sinh viên")
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
-    # Nếu đã khóa phiên, chỉ hiển thị thông báo
+    # Nếu SV đã điểm danh trong phiên này → khóa form
     if st.session_state.get(lock_key):
         st.success(st.session_state.get(info_key, "Bạn đã điểm danh thành công."))
         st.stop()
 
+    # 🔒 Kiểm tra token hợp lệ (chống refresh / điểm danh hộ)
+    def current_slot(now=None, step=30):
+        import time as _t
+        return int((_t.time() if now is None else now) // step)
+
+    def token_valid(t_str: str, step=30, strict=True) -> bool:
+        if not t_str or not str(t_str).isdigit():
+            return False
+        t = int(t_str)
+        now_slot = current_slot(step=step)
+        if strict:
+            return t == now_slot
+        return abs(t - now_slot) <= 1  # nới lỏng ±1 nếu mạng trễ (không khuyến khích)
+
+    if not token_valid(token_qr, step=30, strict=True):
+        st.error("⏳ Link điểm danh đã hết hạn hoặc không hợp lệ. "
+                 "Vui lòng **quét mã QR đang chiếu** để mở form mới.")
+        import time as _t
+        remain = 30 - (int(_t.time()) % 30)
+        st.caption(f"Gợi ý: mã QR đổi sau khoảng {remain} giây.")
+        st.stop()
+
+    # Form nhập (chỉ hiển thị khi token còn hiệu lực)
     mssv = st.text_input("Nhập MSSV")
     hoten = st.text_input("Nhập họ và tên")
 
@@ -224,17 +262,21 @@ if qp.get("sv") == "1":
                 cell_mssv = sheet.find(str(mssv).strip())
 
                 # Kiểm tra họ tên khớp
-                hoten_sheet = sheet.cell(cell_mssv.row, find_header_col(sheet, "Họ và Tên")).value
+                hoten_sheet = sheet.cell(
+                    cell_mssv.row,
+                    find_header_col(sheet, "Họ và Tên")
+                ).value
                 if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                     st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
                     st.stop()
 
-                # Đã điểm danh trước đó?
-                curr = (sheet.cell(cell_mssv.row, col_buoi).value or "").strip()
+                # Kiểm tra đã điểm danh chưa
+                curr_mark = (sheet.cell(cell_mssv.row, col_buoi).value or "").strip()
                 time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
-                if curr:
+                if curr_mark:
                     exist_time = sheet.cell(cell_mssv.row, time_col).value or ""
-                    msg = f"✅ MSSV **{mssv}** đã điểm danh trước đó" + (f" lúc **{exist_time}**." if exist_time else ".")
+                    msg = f"✅ MSSV **{mssv}** đã điểm danh trước đó" + (
+                        f" lúc **{exist_time}**." if exist_time else ".")
                     st.info(msg)
                     st.session_state[lock_key] = True
                     st.session_state[info_key] = msg
@@ -250,9 +292,12 @@ if qp.get("sv") == "1":
                 st.session_state[lock_key] = True
                 st.session_state[info_key] = msg
                 st.rerun()
+
             except Exception as e:
                 st.error(f"❌ Lỗi khi điểm danh: {e}")
+
     st.stop()
+
 
 # ===================== MÀN HÌNH GIẢNG VIÊN (bắt buộc đăng nhập) =====================
 render_gv_auth()  # hiển thị khối đăng nhập ở Sidebar
@@ -418,4 +463,5 @@ with tab_stats:
 
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+
 
