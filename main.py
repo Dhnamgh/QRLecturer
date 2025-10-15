@@ -169,7 +169,14 @@ def token_valid(t_str: str, step=QR_SLOT_SECONDS, strict=True) -> bool:
 
 # ===================== CÁC MỤC GIAO DIỆN =====================
 def render_tab_gv():
-    
+    def render_tab_gv():
+    # Lấy tên lớp theo tên worksheet (động)
+    try:
+        class_name = get_sheet().title  # luôn trùng với tên worksheet hiện tại
+    except Exception:
+        class_name = WORKSHEET_NAME     # fallback nếu mạng/API lỗi
+
+    st.subheader(f"📸 Mã QR điểm danh lớp {class_name} (QR động mỗi {QR_SLOT_SECONDS} giây)")
     buoi = st.selectbox(
         "Chọn buổi học",
         ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
@@ -800,3 +807,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
