@@ -169,7 +169,6 @@ def token_valid(t_str: str, step=QR_SLOT_SECONDS, strict=True) -> bool:
 
 # ===================== CÁC MỤC GIAO DIỆN =====================
 def render_tab_gv():
-    def render_tab_gv():
     # Lấy tên lớp theo tên worksheet (động)
     try:
         class_name = get_sheet().title  # luôn trùng với tên worksheet hiện tại
@@ -807,4 +806,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
