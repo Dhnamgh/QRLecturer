@@ -204,7 +204,7 @@ def render_tab_gv():
                 else:
                     link_slot.empty()
 
-                QR_SLOT_SECONDS - (now % QR_SLOT_SECONDS)
+                remain = QR_SLOT_SECONDS - (now % QR_SLOT_SECONDS)
                 timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
                 if not auto:
@@ -748,6 +748,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
