@@ -181,7 +181,7 @@ def render_tab_gv():
         try:
             while True:
                 now = int(time.time())
-                slot = now // step=QR_SLOT_SECONDS
+                slot = now // QR_SLOT_SECONDS
                 token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
@@ -748,6 +748,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
