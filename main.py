@@ -15,7 +15,7 @@ from PIL import Image
 import qrcode
 import pandas as pd
 import altair as alt
-
+QR_SLOT_SECONDS = 45
 # ===================== CẤU HÌNH GOOGLE SHEETS =====================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -148,11 +148,11 @@ def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
     return nxt
 
 # ===================== TOKEN QR =====================
-def current_slot(now=None, step=30):
+def current_slot(now=None, step=QR_SLOT_SECONDS):
     import time as _t
     return int((_t.time() if now is None else now) // step)
 
-def token_valid(t_str: str, step=30, strict=True) -> bool:
+def token_valid(t_str: str, step=QR_SLOT_SECONDS, strict=True) -> bool:
     if not t_str or not str(t_str).isdigit():
         return False
     t = int(t_str)
@@ -181,7 +181,7 @@ def render_tab_gv():
         try:
             while True:
                 now = int(time.time())
-                slot = now // 30
+                slot = now // step=QR_SLOT_SECONDS
                 token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
@@ -204,7 +204,7 @@ def render_tab_gv():
                 else:
                     link_slot.empty()
 
-                remain = 30 - (now % 30)
+                QR_SLOT_SECONDS - (now % QR_SLOT_SECONDS)
                 timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
                 if not auto:
@@ -748,6 +748,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
