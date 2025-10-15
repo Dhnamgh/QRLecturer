@@ -148,11 +148,11 @@ def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
     return nxt
 
 # ===================== TOKEN QR =====================
-def current_slot(now=None, step=30):
+def current_slot(now=None, step=45):
     import time as _t
     return int((_t.time() if now is None else now) // step)
 
-def token_valid(t_str: str, step=30, strict=True) -> bool:
+def token_valid(t_str: str, step=45, strict=True) -> bool:
     if not t_str or not str(t_str).isdigit():
         return False
     t = int(t_str)
@@ -169,7 +169,7 @@ def render_tab_gv():
         ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
         index=0, key="buoi_gv_select",
     )
-    auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
+    auto = st.toggle("Tự đổi QR mỗi 45 giây", value=True)
     show_link = st.toggle("🔎 Hiển thị link chi tiết (ẩn/hiện)", value=False,
                           help="Bật khi cần xem toàn bộ URL để debug")
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
@@ -181,7 +181,7 @@ def render_tab_gv():
         try:
             while True:
                 now = int(time.time())
-                slot = now // 30
+                slot = now // 45
                 token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
@@ -204,7 +204,7 @@ def render_tab_gv():
                 else:
                     link_slot.empty()
 
-                remain = 30 - (now % 30)
+                remain = 45 - (now % 45)
                 timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
                 if not auto:
@@ -646,10 +646,10 @@ if qp.get("sv") == "1":
         st.stop()
 
     # Yêu cầu token hợp lệ
-    if not token_valid(token_qr, step=30, strict=True):
+    if not token_valid(token_qr, step=45, strict=True):
         st.error("⏳ Link điểm danh đã hết hạn hoặc không hợp lệ. "
                  "Vui lòng **quét mã QR đang chiếu** để mở form mới.")
-        remain = 30 - (int(time.time()) % 30)
+        remain = 45 - (int(time.time()) % 45)
         st.caption(f"Gợi ý: mã QR đổi sau khoảng {remain} giây.")
         st.stop()
 
@@ -748,6 +748,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 
 
