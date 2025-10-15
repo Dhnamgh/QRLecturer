@@ -1,3 +1,4 @@
+# main.py
 import os
 import io
 import re
@@ -16,20 +17,24 @@ import qrcode
 import pandas as pd
 import altair as alt
 
-# ===================== CẤU HÌNH GOOGLE SHEETS =====================
+# ===================== CẤU HÌNH CHUNG =====================
+QR_SLOT_SECONDS = 30          # đổi 1 chỗ cho toàn app (30 giây là khuyến nghị)
+UNLOCK_TTL = 120              # ân hạn phiên SV sau khi mở form (giây)
+MSSV_PREFIX = "51125"         # SV chỉ nhập 4 số cuối, hệ thống ghép tiền tố này
+
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # Đổi nếu cần
-WORKSHEET_NAME = "D25C"  # Đổi nếu cần
+WORKSHEET_NAME = "D25C"                                     # Đổi nếu cần
 VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
-# ===================== PAGE CONFIG =====================
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
 # ===================== TIỆN ÍCH CHUNG =====================
 def get_query_params():
+    # Streamlit mới: st.query_params; fallback: experimental
     if hasattr(st, "query_params"):
         return dict(st.query_params)
     raw = st.experimental_get_query_params()
@@ -49,7 +54,7 @@ def norm_search(s: str) -> str:
 def attendance_flag(val) -> bool:
     return str(val or "").strip() != ""
 
-# ===================== MẬT KHẨU GV (secrets/ENV) =====================
+# ===================== MẬT KHẨU GV (Secrets/ENV) =====================
 def _get_teacher_pw():
     if "teacher_password" in st.secrets:
         return st.secrets["teacher_password"]
@@ -63,21 +68,21 @@ def gv_unlocked() -> bool:
     return bool(st.session_state.get("gv_unlocked"))
 
 def render_gv_auth():
-    if gv_unlocked():
-        with st.sidebar:
-            st.success("👨‍🏫 GV: đã đăng nhập")
+    with st.sidebar:
+        st.header("🔒 Đăng nhập Giảng viên")
+        if gv_unlocked():
+            st.success("Đã đăng nhập")
             if st.button("Đăng xuất"):
                 st.session_state.clear()
                 st.rerun()
-        return
-    with st.sidebar.expander("🔒 Đăng nhập Giảng viên", expanded=True):
-        pw_input = st.text_input("Mật khẩu GV", type="password")
-        if st.button("Đăng nhập"):
-            if _get_teacher_pw() and pw_input == _get_teacher_pw():
-                st.session_state["gv_unlocked"] = True
-                st.rerun()
-            else:
-                st.warning("Sai mật khẩu hoặc chưa cấu hình teacher_password trong Secrets/ENV.")
+        else:
+            pw_input = st.text_input("Mật khẩu", type="password", key="pw_gv")
+            if st.button("Đăng nhập", type="primary", use_container_width=True):
+                if _get_teacher_pw() and pw_input == _get_teacher_pw():
+                    st.session_state["gv_unlocked"] = True
+                    st.rerun()
+                else:
+                    st.warning("Sai mật khẩu hoặc chưa cấu hình `teacher_password` trong Secrets/ENV.")
 
 # ===================== KẾT NỐI GOOGLE SHEETS =====================
 @st.cache_resource
@@ -89,24 +94,27 @@ def _get_gspread_client():
     if not pk:
         raise RuntimeError("Secrets thiếu private_key.")
 
-    # Chuẩn hoá xuống dòng
-    if "\\n" in pk: pk = pk.replace("\\n", "\n")
+    # Chuẩn hóa xuống dòng
+    if "\\n" in pk:
+        pk = pk.replace("\\n", "\n")
     pk = pk.replace("\r\n", "\n").replace("\r", "\n")
 
     header = "-----BEGIN PRIVATE KEY-----"
     footer = "-----END PRIVATE KEY-----"
     if header not in pk or footer not in pk:
-        raise RuntimeError("private_key thiếu header/footer BEGIN/END.")
+        raise RuntimeError("private_key thiếu BEGIN/END.")
 
-    # Làm sạch nội dung và chuẩn padding base64
+    # Làm sạch nội dung & padding base64
     lines = [ln.strip() for ln in pk.split("\n")]
-    h_idx = lines.index(header); f_idx = lines.index(footer)
+    h_idx = lines.index(header)
+    f_idx = lines.index(footer)
     body_raw = re.sub(r"[^A-Za-z0-9+/=]", "", "".join([ln for ln in lines[h_idx+1:f_idx] if ln]))
     body = body_raw.replace("=", "")
     if not body:
         raise RuntimeError("private_key rỗng sau khi làm sạch.")
     rem = len(body) % 4
-    if rem: body += "=" * (4 - rem)
+    if rem:
+        body += "=" * (4 - rem)
     base64.b64decode(body, validate=True)
 
     pk_clean = header + "\n" + "\n".join(body[i:i+64] for i in range(0, len(body), 64)) + "\n" + footer + "\n"
@@ -129,13 +137,11 @@ def find_header_col(sheet, header_name):
 def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
     headers = sheet.row_values(1)
     n_cols = len(headers)
-    # 1) cột bên phải
     nxt = buoi_col + 1
     if nxt <= n_cols:
         h = (headers[nxt-1] or "").lower()
         if "thời gian" in h or "time" in h:
             return nxt
-    # 2) dò theo số buổi
     m = re.search(r"(\d+)", buoi_header or "", flags=re.I)
     idx = m.group(1) if m else None
     if idx:
@@ -143,25 +149,25 @@ def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
             hl = (h or "").lower()
             if (("thời gian" in hl) or ("time" in hl)) and re.search(rf"\b{idx}\b", hl):
                 return i
-    # 3) tạo ở cột bên phải nếu chưa có
+    # tạo mới ở cột kế bên
     sheet.update_cell(1, nxt, f"Thời gian {buoi_header}")
     return nxt
 
 # ===================== TOKEN QR =====================
-def current_slot(now=None, step=45):
+def current_slot(now=None, step=QR_SLOT_SECONDS):
     import time as _t
     return int((_t.time() if now is None else now) // step)
 
-def token_valid(t_str: str, step=45, strict=True) -> bool:
+def token_valid(t_str: str, step=QR_SLOT_SECONDS, strict=True) -> bool:
     if not t_str or not str(t_str).isdigit():
         return False
     t = int(t_str)
     now_slot = current_slot(step=step)
     if strict:
         return t == now_slot
-    return abs(t - now_slot) <= 1
+    return abs(t - now_slot) <= 1  # chấp nhận lệch ±1 slot nếu cần
 
-# ===================== NỘI DUNG “TAB” (render ở Content, chọn ở Sidebar) =====================
+# ===================== CÁC MỤC GIAO DIỆN =====================
 def render_tab_gv():
     
     buoi = st.selectbox(
@@ -169,7 +175,7 @@ def render_tab_gv():
         ["Buổi 1", "Buổi 2", "Buổi 3", "Buổi 4", "Buổi 5", "Buổi 6"],
         index=0, key="buoi_gv_select",
     )
-    auto = st.toggle("Tự đổi QR mỗi 45 giây", value=True)
+    auto = st.toggle("Tự đổi QR mỗi 30 giây", value=True)
     show_link = st.toggle("🔎 Hiển thị link chi tiết (ẩn/hiện)", value=False,
                           help="Bật khi cần xem toàn bộ URL để debug")
     go = st.button("Tạo mã QR", use_container_width=True, type="primary")
@@ -181,7 +187,7 @@ def render_tab_gv():
         try:
             while True:
                 now = int(time.time())
-                slot = now // 45
+                slot = now // QR_SLOT_SECONDS
                 token = f"{slot}"
                 base_url = st.secrets["google_service_account"].get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
@@ -204,7 +210,7 @@ def render_tab_gv():
                 else:
                     link_slot.empty()
 
-                remain = 45 - (now % 45)
+                remain = QR_SLOT_SECONDS - (now % QR_SLOT_SECONDS)
                 timer_slot.markdown(f"⏳ QR đổi sau: **{remain} giây**  •  Buổi: **{buoi}**")
 
                 if not auto:
@@ -250,7 +256,7 @@ def render_tab_search():
                 st.success(f"Tìm thấy {len(results)} kết quả:")
                 show_cols = list(records[0].keys()) if records else []
                 pref = ["MSSV", "Họ và Tên", "Tổ"]
-                buoi_cols = [c for c in show_cols if c.lower().startswith("buổi ")]
+                buoi_cols = [c for c in show_cols if norm_search(c).startswith("buổi ")]
                 cols = [c for c in pref if c in show_cols] + buoi_cols
 
                 tidy = []
@@ -268,7 +274,7 @@ def render_tab_stats():
     try:
         sheet = get_sheet()
         headers = sheet.row_values(1)
-        buoi_list = [h for h in headers if h.lower().startswith("buổi ")]
+        buoi_list = [h for h in headers if norm_search(h).startswith("buổi ")]
         buoi_chon = st.selectbox("Chọn buổi", buoi_list or ["Buổi 1"], index=0)
         records = load_records(sheet)
 
@@ -290,7 +296,6 @@ def render_tab_stats():
             total = present + absent
             st.metric("📈 Tỷ lệ có mặt", f"{(present/total*100):.1f}%" if total else "-")
 
-        # Biểu đồ cột
         rows = []
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
@@ -321,7 +326,6 @@ def render_tab_stats():
         else:
             st.info("Không có dữ liệu để vẽ biểu đồ.")
 
-        # Bảng thống kê
         table = []
         for g, v in sorted(by_group.items()):
             total_g = v["present"] + v["absent"]
@@ -331,12 +335,12 @@ def render_tab_stats():
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
 
-# ===== Trợ lý AI =====
+# ===== Trợ lý AI (nâng cấp) – chạy nội bộ, không dùng API ngoài =====
 def render_tab_ai():
     import unicodedata, re, datetime
     from difflib import get_close_matches
 
-    st.subheader("🤖 Trợ lý AI ")
+    st.subheader("🤖 Trợ lý AI (nội bộ, không dùng API ngoài)")
     st.caption(
         "Ví dụ: “Buổi 3 có bao nhiêu SV đi học?”, “Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
         "“Ai đi học sớm nhất buổi 2?”, “Ai đến muộn nhất buổi 4?”, "
@@ -344,7 +348,7 @@ def render_tab_ai():
     )
     q_raw = st.text_input("Câu hỏi của bạn", placeholder="Nhập câu hỏi tiếng Việt (có thể gõ không dấu)...")
 
-    # ===== Helpers NLP cơ bản (no API) =====
+    # ===== Helpers NLP =====
     def lv_norm(s: str) -> str:
         s = (s or "").strip().lower()
         s = unicodedata.normalize("NFD", s)
@@ -364,11 +368,9 @@ def render_tab_ai():
         return False
 
     def extract_buoi(text_norm: str, buoi_cols: list[str]) -> str | None:
-        # khớp trực tiếp theo tên cột đã bỏ dấu
         for b in buoi_cols:
             if lv_norm(b) in text_norm:
                 return b
-        # khớp "buoi <so>"
         m = re.search(r"\bbuoi\s*(\d+)\b", text_norm)
         if m:
             num = m.group(1)
@@ -392,13 +394,11 @@ def render_tab_ai():
         return m2.group(1) if m2 else None
 
     def find_student_row(records: list[dict], mssv_or_name: str) -> dict | None:
-        # ưu tiên MSSV
         if looks_like_mssv(mssv_or_name):
             ms = re.sub(r"\D", "", mssv_or_name)
             for r in records:
                 if re.sub(r"\D", "", str(r.get("MSSV",""))) == ms:
                     return r
-        # tên gần đúng (không dấu)
         target = lv_norm(mssv_or_name)
         names = [r.get("Họ và Tên","") for r in records]
         name_map = {n: r for n, r in zip(names, records)}
@@ -422,7 +422,7 @@ def render_tab_ai():
         name = " ".join(remain).strip()
         return name if name else None
 
-    # ===== Dò cột Buổi + Thời gian (theo header bạn cung cấp) =====
+    # ===== Dò cột Buổi + Thời gian (linh hoạt) =====
     def detect_buoi_columns(headers: list[str]) -> list[str]:
         cols = []
         for h in headers:
@@ -433,7 +433,6 @@ def render_tab_ai():
                 cols.append(h); continue
             if norm_search(h).startswith("buổi ") and re.search(r"\d+", norm_search(h)):
                 cols.append(h); continue
-        # loại trùng
         seen, out = set(), []
         for h in cols:
             if h not in seen:
@@ -454,7 +453,7 @@ def render_tab_ai():
                     if (("thời gian" in h.lower()) or ("thoi gian" in hn) or ("time" in h.lower())) and re.search(rf"\b{num}\b", hn):
                         tcol = i; break
             if not tcol and idx < len(headers):
-                right = headers[idx]  # cột ngay bên phải (1-based -> headers[idx])
+                right = headers[idx]  # cột bên phải (1-based -> headers[idx])
                 hn = norm_search(right)
                 if ("thời gian" in right.lower()) or ("time" in right.lower()) or ("thoi gian" in hn):
                     tcol = idx + 1
@@ -627,76 +626,128 @@ def render_tab_ai():
         except Exception as e:
             st.error(f"❌ Lỗi khi xử lý câu hỏi: {e}")
 
-
-# ===================== GIAO DIỆN: SV / GV =====================
+# ===================== luồng trang: SV / GV =====================
 qp = get_query_params()
 
 # ---------- MÀN HÌNH SINH VIÊN ----------
 if qp.get("sv") == "1":
     buoi_sv = qp.get("buoi", "Buổi 1")
     token_qr = qp.get("t", "")
+
     lock_key = f"locked_{buoi_sv}"
     info_key = f"lock_info_{buoi_sv}"
 
     st.title("🎓 Điểm danh sinh viên")
     st.info(f"Bạn đang điểm danh cho **{buoi_sv}**")
 
+    # Nếu đã khóa vì đã điểm danh
     if st.session_state.get(lock_key):
         st.success(st.session_state.get(info_key, "Bạn đã điểm danh thành công."))
         st.stop()
 
-    # Yêu cầu token hợp lệ
-    if not token_valid(token_qr, step=45, strict=True):
-        st.error("⏳ Link điểm danh đã hết hạn hoặc không hợp lệ. "
-                 "Vui lòng **quét mã QR đang chiếu** để mở form mới.")
-        remain = 45 - (int(time.time()) % 45)
-        st.caption(f"Gợi ý: mã QR đổi sau khoảng {remain} giây.")
-        st.stop()
+    # ===== Mở khóa phiên theo session_state để tránh 'hết hạn' khi rerun =====
+    unlock_key = f"sv_unlocked_{buoi_sv}"      # lưu {'ts': epoch, 't': token}
+    now_epoch = time.time()
+    uinfo = st.session_state.get(unlock_key)
 
-    # Form nhập
-    mssv = st.text_input("Nhập MSSV")
+    if not uinfo:
+        # Lần đầu vào: buộc token hợp lệ (nới lỏng ±1 slot để tránh sát ranh)
+        if not token_valid(token_qr, step=QR_SLOT_SECONDS, strict=False):
+            st.error("⏳ Link điểm danh đã hết hạn hoặc không hợp lệ. Vui lòng quét mã QR mới.")
+            remain = QR_SLOT_SECONDS - (int(time.time()) % QR_SLOT_SECONDS)
+            st.caption(f"Gợi ý: mã QR đổi sau khoảng {remain} giây.")
+            st.stop()
+        # Token hợp lệ -> mở khóa phiên với TTL
+        st.session_state[unlock_key] = {"ts": now_epoch, "t": str(token_qr)}
+    else:
+        # Đã mở khóa -> cho dùng tiếp trong TTL mà KHÔNG kiểm token nữa
+        if now_epoch - uinfo["ts"] > UNLOCK_TTL:
+            st.warning("Phiên điểm danh đã hết thời gian. Vui lòng quét mã QR mới.")
+            del st.session_state[unlock_key]
+            st.stop()
+
+    # ======= Form điểm danh: SV chỉ nhập 4 số cuối MSSV =======
+    mssv_suffix = st.text_input(
+        "Nhập **4 số cuối** MSSV",
+        placeholder="VD: 1234",
+        max_chars=4,
+        help=f"Mã đầy đủ sẽ là {MSSV_PREFIX} + 4 số cuối bạn nhập"
+    )
     hoten = st.text_input("Nhập họ và tên")
 
+    if mssv_suffix.strip().isdigit():
+        full_mssv_preview = f"{MSSV_PREFIX}{mssv_suffix.strip().zfill(4)}"
+        st.caption(f"MSSV đầy đủ: **{full_mssv_preview}**")
+
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
-        if not mssv.strip().isdigit():
-            st.warning("⚠️ MSSV phải là số.")
-        elif not hoten.strip():
+        if not mssv_suffix.strip().isdigit() or len(mssv_suffix.strip()) != 4:
+            st.warning("⚠️ Vui lòng nhập **đúng 4 số cuối** MSSV (chỉ số).")
+            st.stop()
+        if not hoten.strip():
             st.warning("⚠️ Vui lòng nhập họ và tên.")
-        else:
+            st.stop()
+
+        full_mssv = f"{MSSV_PREFIX}{mssv_suffix.strip().zfill(4)}"
+
+        try:
+            sheet = get_sheet()
+            col_buoi = find_header_col(sheet, buoi_sv)
+
+            # Tìm hàng theo MSSV đầy đủ; nếu không thấy, fallback quét records
             try:
-                sheet = get_sheet()
-                col_buoi = find_header_col(sheet, buoi_sv)
-                cell_mssv = sheet.find(str(mssv).strip())
+                cell_mssv = sheet.find(full_mssv)
+            except Exception:
+                cell_mssv = None
 
-                # Kiểm tra họ tên khớp
-                hoten_sheet = sheet.cell(cell_mssv.row, find_header_col(sheet, "Họ và Tên")).value
-                if normalize_name(hoten_sheet or "") != normalize_name(hoten):
-                    st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
-                    st.stop()
+            if not cell_mssv:
+                records = load_records(sheet)
+                target_row = None
+                for idx, r in enumerate(records, start=2):
+                    ms = str(r.get("MSSV", "")).strip()
+                    ms_norm = re.sub(r"\D", "", ms) if ms else ""
+                    if ms_norm.startswith(MSSV_PREFIX) and ms_norm.endswith(mssv_suffix.strip().zfill(4)):
+                        target_row = idx
+                        break
+                if target_row:
+                    class DummyCell:
+                        def __init__(self, row): self.row = row
+                    cell_mssv = DummyCell(target_row)
 
-                # Kiểm tra đã điểm danh trước đó
-                curr_mark = (sheet.cell(cell_mssv.row, col_buoi).value or "").strip()
-                time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
-                if curr_mark:
-                    exist_time = sheet.cell(cell_mssv.row, time_col).value or ""
-                    msg = f"✅ MSSV **{mssv}** đã điểm danh trước đó" + (f" lúc **{exist_time}**." if exist_time else ".")
-                    st.info(msg)
-                    st.session_state[lock_key] = True
-                    st.session_state[info_key] = msg
-                    st.rerun()
+            if not cell_mssv:
+                st.error(f"❌ Không tìm thấy MSSV **{full_mssv}** trong danh sách.")
+                st.stop()
 
-                # Ghi ✅ và thời gian
-                sheet.update_cell(cell_mssv.row, col_buoi, "✅")
-                now_str = datetime.datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
-                sheet.update_cell(cell_mssv.row, time_col, now_str)
+            # Kiểm tra họ tên khớp
+            hoten_sheet = sheet.cell(cell_mssv.row, find_header_col(sheet, "Họ và Tên")).value
+            if normalize_name(hoten_sheet or "") != normalize_name(hoten):
+                st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
+                st.stop()
 
-                msg = f"🎉 Điểm danh thành công! MSSV **{mssv}** ({now_str})."
-                st.success(msg)
+            # Kiểm tra đã điểm danh trước đó
+            curr_mark = (sheet.cell(cell_mssv.row, col_buoi).value or "").strip()
+            time_col = find_or_create_time_col(sheet, col_buoi, buoi_sv)
+            if curr_mark:
+                exist_time = sheet.cell(cell_mssv.row, time_col).value or ""
+                msg = f"✅ MSSV **{full_mssv}** đã điểm danh trước đó" + (f" lúc **{exist_time}**." if exist_time else ".")
+                st.info(msg)
                 st.session_state[lock_key] = True
                 st.session_state[info_key] = msg
                 st.rerun()
-            except Exception as e:
-                st.error(f"❌ Lỗi khi điểm danh: {e}")
+
+            # Ghi ✅ và thời gian thực
+            sheet.update_cell(cell_mssv.row, col_buoi, "✅")
+            now_str = datetime.datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+            sheet.update_cell(cell_mssv.row, time_col, now_str)
+
+            msg = f"🎉 Điểm danh thành công! MSSV **{full_mssv}** ({now_str})."
+            st.success(msg)
+            st.session_state[lock_key] = True
+            st.session_state[info_key] = msg
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Lỗi khi điểm danh: {e}")
+
     st.stop()
 
 # ---------- MÀN HÌNH GIẢNG VIÊN ----------
@@ -710,15 +761,16 @@ if not gv_unlocked():
 # Điều hướng ở Sidebar
 with st.sidebar:
     st.markdown("---")
+    st.markdown("**📂 Điều hướng**")
     menu = st.radio(
         "Chọn mục",
-        options=["👨‍🏫 Tạo QR code", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
+        options=["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
         index=0,
         label_visibility="collapsed"
     )
 
 # Nội dung ở khung chính
-if menu == "👨‍🏫 Tạo QR code":
+if menu == "👨‍🏫 Giảng viên (QR động)":
     render_tab_gv()
 elif menu == "🔎 Tìm kiếm":
     render_tab_search()
@@ -748,7 +800,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-
-
