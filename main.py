@@ -802,9 +802,10 @@ st.markdown(
         width: 100%;
     }
     </style>
-    <div class="footer-dhn">© Bản quyền thuộc về <strong>TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh</strong></div>
+    <div class="footer-dhn"> Copyright © 2025 Bản quyền thuộc về <strong>TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh</strong></div>
     """,
     unsafe_allow_html=True
 )
+
 
 
