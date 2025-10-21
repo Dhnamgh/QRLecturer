@@ -242,26 +242,9 @@ with tab_sv:
                 st.success("🎉 Điểm danh thành công!")
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
-# ---------- FOOTER (bản quyền, căn giữa) ----------
-st.markdown(
-    """
-    <style>
-    .footer-dhn {
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        padding: 8px 16px;
-        background: rgba(0,0,0,0.04);
-        color: #444;
-        font-size: 12px;
-        text-align: center;
-        z-index: 1000;
-        border-top: 1px solid rgba(0,0,0,0.1);
-        width: 100%;
-    }
-    </style>
-    <div class="footer-dhn"> Copyright © 2025 Bản quyền thuộc về <strong>TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh</strong></div>
-    """,
-    unsafe_allow_html=True
-)
+# ---------- FOOTER  ----------
+
+st.markdown("---")
+st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
 
 
