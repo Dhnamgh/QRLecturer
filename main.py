@@ -62,6 +62,25 @@ def get_query_params():
 
 def normalize_name(name: str):
     return " ".join(w.capitalize() for w in name.strip().split())
+# ===================== CẬP NHẬT CẢ DẤU VÀ THỜI GIAN =====================
+from datetime import datetime, timezone, timedelta
+
+def _time_col_for(buoi: str) -> str:
+    """Tự động xác định tên cột Thời gian tương ứng với Buổi"""
+    digits = "".join(ch for ch in buoi if ch.isdigit())
+    return f"Thời gian {digits}" if digits else "Thời gian"
+
+def mark_present_with_time(sheet, buoi: str, row_idx: int):
+    """Đánh dấu ✅ và ghi thời gian vào cột tương ứng"""
+    col_diemdanh = sheet.find(buoi).col
+    col_time = sheet.find(_time_col_for(buoi)).col
+
+    # Giờ Việt Nam (UTC+7)
+    vn_tz = timezone(timedelta(hours=7))
+    now_str = datetime.now(vn_tz).strftime("%Y-%m-%d %H:%M:%S")
+
+    sheet.update_cell(row_idx, col_diemdanh, "✅")
+    sheet.update_cell(row_idx, col_time, now_str)
 
 # ===================== URL PARAMS & CHẾ ĐỘ SV-ONLY =====================
 qp = get_query_params()
@@ -94,7 +113,7 @@ if student_only:
             if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                 st.error("Họ tên không khớp với MSSV trong danh sách.")
             else:
-                sheet.update_cell(cell_mssv.row, col_buoi, "✅")
+                mark_present_with_time(sheet, buoi_sv, cell_mssv.row)
                 st.success("Đã điểm danh!")
         except Exception as e:
             st.error(f"Lỗi khi điểm danh: {e}")
@@ -196,7 +215,7 @@ else:
             if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                 st.error("Họ tên không khớp với MSSV.")
             else:
-                sheet.update_cell(cell_mssv.row, col_buoi, "✅")
+                mark_present_with_time(sheet, buoi, cell_mssv.row)
                 st.success("Đã điểm danh!")
         except Exception as e:
             st.error(f"Lỗi khi điểm danh: {e}")
@@ -205,6 +224,7 @@ else:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
