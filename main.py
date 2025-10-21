@@ -258,138 +258,156 @@ if mode == "👨‍🏫 Giảng viên":
         st.warning("Vui lòng đăng nhập để dùng chức năng giảng viên.")
         st.stop()
 
-    st.subheader("📸 Tạo mã QR điểm danh")
-    st.caption("Mã QR chứa lớp & buổi; SV quét sẽ ở trang gốc (wrapper).")
-    if st.button("Tạo mã QR"):
-        st.session_state["lop"] = lop_chon
-        st.session_state["buoi"] = buoi
-        qr_link = f"{WRAPPER_URL}?sv=1&lop={urllib.parse.quote(lop_chon)}&buoi={urllib.parse.quote(buoi)}"
-        img_qr = qrcode.make(qr_link)
-        buf = io.BytesIO(); img_qr.save(buf, format="PNG"); buf.seek(0)
-        st.image(Image.open(buf), caption="Quét để điểm danh", width=260)
-        st.code(qr_link, language="text")
-        t = st.empty()
-        for i in range(60, 0, -1):
-            t.markdown(f"⏳ Hiệu lực còn: **{i} giây**")
-            time.sleep(1)
-        t.markdown("Đã hết thời gian hiệu lực.")
+    # 3 tab: Tạo mã QR / Thống kê / Trợ lý lớp
+    tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "🤖 Trợ lý lớp"])
 
-    # Thống kê điểm danh (tổng)
-    if "lop" in st.session_state and "buoi" in st.session_state:
-        st.subheader(f"📊 Thống kê: Lớp **{st.session_state['lop']}** • {st.session_state['buoi']}")
+    # ===== TAB: TẠO MÃ QR =====
+    with tab_qr:
+        st.subheader("📸 Tạo mã QR điểm danh")
+        st.caption("Mã QR chứa lớp & buổi; SV quét sẽ ở trang gốc (wrapper).")
+
+        if st.button("Tạo mã QR"):
+            st.session_state["lop"] = lop_chon
+            st.session_state["buoi"] = buoi
+            qr_link = f"{WRAPPER_URL}?sv=1&lop={urllib.parse.quote(lop_chon)}&buoi={urllib.parse.quote(buoi)}"
+
+            img_qr = qrcode.make(qr_link)
+            buf = io.BytesIO(); img_qr.save(buf, format="PNG"); buf.seek(0)
+            st.image(Image.open(buf), caption="Quét để điểm danh", width=260)
+            st.code(qr_link, language="text")
+
+            t = st.empty()
+            for i in range(60, 0, -1):
+                t.markdown(f"⏳ Hiệu lực còn: **{i} giây**")
+                time.sleep(1)
+            t.markdown("Đã hết thời gian hiệu lực.")
+
+    # ===== TAB: THỐNG KÊ =====
+    with tab_stats:
+        # Lấy lớp/buổi đang làm việc (ưu tiên giá trị vừa tạo QR)
+        lop_stat = st.session_state.get("lop", lop_chon)
+        buoi_stat = st.session_state.get("buoi", buoi)
+
+        st.subheader(f"📊 Thống kê tổng: Lớp **{lop_stat}** • {buoi_stat}")
         try:
-            sheet = get_sheet(st.session_state["lop"])
-            col = sheet.find(st.session_state["buoi"]).col
+            sheet = get_sheet(lop_stat)
+            col = sheet.find(buoi_stat).col
             data = sheet.col_values(col)[1:]
             dd = sum(1 for x in data if str(x).strip())
             vang = len(data) - dd
             ds_vang = [sheet.cell(i + 2, 3).value for i, x in enumerate(data) if not str(x).strip()]
+
             c1, c2 = st.columns(2)
             with c1: st.metric("Đã điểm danh", dd)
             with c2: st.metric("Vắng", vang)
             st.write("Danh sách vắng:")
             st.dataframe(ds_vang, use_container_width=True)
         except Exception as e:
-            st.error(f"Lỗi khi lấy thống kê: {e}")
-    else:
-        st.info("Chưa có dữ liệu thống kê. Hãy tạo QR trước.")
+            st.error(f"Lỗi khi lấy thống kê tổng: {e}")
 
-    # -------- Thống kê theo tổ --------
-    st.subheader("📈 Thống kê theo tổ")
-    try:
-        sheet_g = get_sheet(st.session_state.get("lop", lop_chon))
-        df = sheet_to_df(sheet_g)
-        stats = group_stats_for_buoi(df, st.session_state.get("buoi", buoi), group_col="Tổ")
-        if stats.empty:
-            st.info("Chưa có dữ liệu để thống kê.")
-        else:
-            chart = (
-                alt.Chart(stats)
-                .mark_bar()
-                .encode(
-                    x=alt.X("group:N", title="Tổ", sort=stats["group"].tolist()),
-                    y=alt.Y("present:Q", title="Số đi học"),
-                    color=alt.Color("group:N", title="Tổ", legend=None),
-                    tooltip=[
-                        alt.Tooltip("group:N", title="Tổ"),
-                        alt.Tooltip("present:Q", title="Đi học"),
-                        alt.Tooltip("absent:Q", title="Vắng"),
-                        alt.Tooltip("total:Q", title="Tổng"),
-                        alt.Tooltip("rate:Q", title="Tỷ lệ %"),
-                    ],
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(chart, use_container_width=True)
-            st.dataframe(
-                stats.rename(columns={"group":"Tổ","present":"Đi học","absent":"Vắng","total":"Tổng","rate":"Tỷ lệ %"}),
-                use_container_width=True
-            )
-    except Exception as e:
-        st.error(f"Lỗi thống kê theo tổ: {e}")
-
-    # -------- Trợ lý AI --------
-    st.subheader("🤖 Trợ lý AI")
-    colq1, colq2 = st.columns([2, 1])
-    with colq1:
-        preset = st.selectbox(
-            "Câu hỏi nhanh",
-            [
-                "Ai đi sớm nhất buổi hiện tại",
-                "Ai đi muộn nhất buổi hiện tại",
-                "Tổ nào có mặt nhiều nhất (theo số lượng)",
-                "Tổ nào có mặt ít nhất (theo số lượng)",
-                "Tổ nào có tỷ lệ cao nhất",
-                "Tổ nào có tỷ lệ thấp nhất",
-            ],
-            index=0,
-        )
-    with colq2:
-        buoi_ask = st.selectbox(
-            "Buổi áp dụng",
-            ["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"],
-            index=["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"].index(st.session_state.get("buoi", buoi))
-            if st.session_state.get("buoi", buoi) in ["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"] else 0
-        )
-    if st.button("Trả lời"):
+        st.markdown("---")
+        st.subheader("📈 Thống kê theo tổ")
         try:
-            sheet2 = get_sheet(st.session_state.get("lop", lop_chon))
-            df2 = sheet_to_df(sheet2)
-            ts = parse_time_series(df2, buoi_ask)
-            stats2 = group_stats_for_buoi(df2, buoi_ask, group_col="Tổ")
-            p = preset.lower()
-            if "sớm nhất" in p:
-                if ts.empty: st.info("Chưa có dữ liệu thời gian cho buổi này.")
-                else:
-                    r = ts.sort_values("time", ascending=True).iloc[0]
-                    st.success(f"✅ Sớm nhất: **{r['Họ và Tên']}** (MSSV **{r['MSSV']}**) lúc **{r['time'].strftime('%H:%M:%S')}**.")
-            elif "muộn nhất" in p:
-                if ts.empty: st.info("Chưa có dữ liệu thời gian cho buổi này.")
-                else:
-                    r = ts.sort_values("time", ascending=False).iloc[0]
-                    st.success(f"⏰ Muộn nhất: **{r['Họ và Tên']}** (MSSV **{r['MSSV']}**) lúc **{r['time'].strftime('%H:%M:%S')}**.")
-            elif "nhiều nhất (theo số lượng)" in p:
-                if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
-                else:
-                    r = stats2.sort_values("present", ascending=False).iloc[0]
-                    st.success(f"📊 Nhiều nhất: **Tổ {r['group']}** — **{r['present']}/{r['total']}** (≈ **{r['rate']}%**).")
-            elif "ít nhất (theo số lượng)" in p:
-                if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
-                else:
-                    r = stats2.sort_values("present", ascending=True).iloc[0]
-                    st.success(f"📊 Ít nhất: **Tổ {r['group']}** — **{r['present']}/{r['total']}** (≈ **{r['rate']}%**).")
-            elif "tỷ lệ cao nhất" in p:
-                if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
-                else:
-                    r = stats2.sort_values(["rate","present"], ascending=[False,False]).iloc[0]
-                    st.success(f"🏅 Tỷ lệ cao nhất: **Tổ {r['group']}** — **{r['rate']}%** ({r['present']}/{r['total']}).")
-            elif "tỷ lệ thấp nhất" in p:
-                if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
-                else:
-                    r = stats2.sort_values(["rate","present"], ascending=[True,True]).iloc[0]
-                    st.success(f"📉 Tỷ lệ thấp nhất: **Tổ {r['group']}** — **{r['rate']}%** ({r['present']}/{r['total']}).")
+            sheet_g = get_sheet(lop_stat)
+            df = sheet_to_df(sheet_g)
+            stats = group_stats_for_buoi(df, buoi_stat, group_col="Tổ")
+            if stats.empty:
+                st.info("Chưa có dữ liệu để thống kê theo tổ.")
+            else:
+                chart = (
+                    alt.Chart(stats)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("group:N", title="Tổ", sort=stats["group"].tolist()),
+                        y=alt.Y("present:Q", title="Số đi học"),
+                        color=alt.Color("group:N", title="Tổ", legend=None),
+                        tooltip=[
+                            alt.Tooltip("group:N", title="Tổ"),
+                            alt.Tooltip("present:Q", title="Đi học"),
+                            alt.Tooltip("absent:Q", title="Vắng"),
+                            alt.Tooltip("total:Q", title="Tổng"),
+                            alt.Tooltip("rate:Q", title="Tỷ lệ %"),
+                        ],
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(chart, use_container_width=True)
+                st.dataframe(
+                    stats.rename(columns={"group":"Tổ","present":"Đi học","absent":"Vắng","total":"Tổng","rate":"Tỷ lệ %"}),
+                    use_container_width=True
+                )
         except Exception as e:
-            st.error(f"Lỗi trợ lý lớp: {e}")
+            st.error(f"Lỗi thống kê theo tổ: {e}")
+
+    # ===== TAB: TRỢ AI =====
+    with tab_ai:
+        lop_ai = st.session_state.get("lop", lop_chon)
+        buoi_ai_default = st.session_state.get("buoi", buoi)
+
+        st.subheader("🤖 Trợ lý AI")
+        colq1, colq2 = st.columns([2, 1])
+        with colq1:
+            preset = st.selectbox(
+                "Câu hỏi nhanh",
+                [
+                    "Ai đi sớm nhất buổi hiện tại",
+                    "Ai đi muộn nhất buổi hiện tại",
+                    "Tổ nào có mặt nhiều nhất (theo số lượng)",
+                    "Tổ nào có mặt ít nhất (theo số lượng)",
+                    "Tổ nào có tỷ lệ cao nhất",
+                    "Tổ nào có tỷ lệ thấp nhất",
+                ],
+                index=0,
+            )
+        with colq2:
+            buoi_ask = st.selectbox(
+                "Buổi áp dụng",
+                ["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"],
+                index=["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"].index(buoi_ai_default)
+                if buoi_ai_default in ["Buổi 1","Buổi 2","Buổi 3","Buổi 4","Buổi 5","Buổi 6"] else 0
+            )
+
+        if st.button("Trả lời"):
+            try:
+                sheet2 = get_sheet(lop_ai)
+                df2 = sheet_to_df(sheet2)
+                ts = parse_time_series(df2, buoi_ask)
+                stats2 = group_stats_for_buoi(df2, buoi_ask, group_col="Tổ")
+                p = preset.lower()
+
+                if "sớm nhất" in p:
+                    if ts.empty: st.info("Chưa có dữ liệu thời gian cho buổi này.")
+                    else:
+                        r = ts.sort_values("time", ascending=True).iloc[0]
+                        st.success(f"✅ Sớm nhất: **{r['Họ và Tên']}** (MSSV **{r['MSSV']}**) lúc **{r['time'].strftime('%H:%M:%S')}**.")
+                elif "muộn nhất" in p:
+                    if ts.empty: st.info("Chưa có dữ liệu thời gian cho buổi này.")
+                    else:
+                        r = ts.sort_values("time", ascending=False).iloc[0]
+                        st.success(f"⏰ Muộn nhất: **{r['Họ và Tên']}** (MSSV **{r['MSSV']}**) lúc **{r['time'].strftime('%H:%M:%S')}**.")
+                elif "nhiều nhất (theo số lượng)" in p:
+                    if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
+                    else:
+                        r = stats2.sort_values("present", ascending=False).iloc[0]
+                        st.success(f"📊 Nhiều nhất: **Tổ {r['group']}** — **{r['present']}/{r['total']}** (≈ **{r['rate']}%**).")
+                elif "ít nhất (theo số lượng)" in p:
+                    if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
+                    else:
+                        r = stats2.sort_values("present", ascending=True).iloc[0]
+                        st.success(f"📊 Ít nhất: **Tổ {r['group']}** — **{r['present']}/{r['total']}** (≈ **{r['rate']}%**).")
+                elif "tỷ lệ cao nhất" in p:
+                    if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
+                    else:
+                        r = stats2.sort_values(["rate","present"], ascending=[False,False]).iloc[0]
+                        st.success(f"🏅 Tỷ lệ cao nhất: **Tổ {r['group']}** — **{r['rate']}%** ({r['present']}/{r['total']}).")
+                elif "tỷ lệ thấp nhất" in p:
+                    if stats2.empty: st.info("Chưa có dữ liệu thống kê.")
+                    else:
+                        r = stats2.sort_values(["rate","present"], ascending=[True,True]).iloc[0]
+                        st.success(f"📉 Tỷ lệ thấp nhất: **Tổ {r['group']}** — **{r['rate']}%** ({r['present']}/{r['total']}).")
+            except Exception as e:
+                st.error(f"Lỗi trợ lý AI: {e}")
+
 
 # ---------- SINH VIÊN (tab dự phòng trong app) ----------
 else:
@@ -420,6 +438,7 @@ else:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
