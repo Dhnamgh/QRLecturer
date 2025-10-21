@@ -187,7 +187,7 @@ with tab_gv:
         img = Image.open(buf)
 
         st.image(img, caption="📱 Quét mã để điểm danh", width=260)
-        st.write(f"🔗 Link: {qr_data}")
+        
 
         countdown = st.empty()
         for i in range(60, 0, -1):  # 1 phút
@@ -246,5 +246,6 @@ with tab_sv:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
