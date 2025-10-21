@@ -86,6 +86,7 @@ def mark_present_with_time(sheet, buoi: str, row_idx: int):
 qp = get_query_params()
 student_only = (qp.get("sv") == "1") or ("buoi" in qp) or ("lop" in qp)
 
+# ===================== SINH VIÊN ĐIỂM DANH (SAU KHI QUÉT QR) =====================
 if student_only:
     buoi_sv = qp.get("buoi", "Buổi 1")
     lop_sv = qp.get("lop")
@@ -97,26 +98,50 @@ if student_only:
     if not lop_sv:
         st.error("Không xác định được lớp.")
         st.stop()
+
     st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
 
-    st.write("Mã số sinh viên: 51125")
+    st.write("5 số đầu MSSV: 51125")
     mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
     mssv = "51125" + (mssv_tail or "").strip()
     hoten = st.text_input("Nhập họ và tên")
 
     if st.button("✅ Xác nhận điểm danh"):
-        try:
-            sheet = get_sheet(lop_sv)
-            col_buoi = sheet.find(buoi_sv).col
-            cell_mssv = sheet.find(str(mssv).strip())
-            hoten_sheet = sheet.cell(cell_mssv.row, sheet.find("Họ và Tên").col).value
-            if normalize_name(hoten_sheet or "") != normalize_name(hoten):
-                st.error("Họ tên không khớp với MSSV trong danh sách.")
-            else:
-                mark_present_with_time(sheet, buoi_sv, cell_mssv.row)
-                st.success("Đã điểm danh!")
-        except Exception as e:
-            st.error(f"Lỗi khi điểm danh: {e}")
+        if not mssv.strip().isdigit():
+            st.warning("⚠️ MSSV phải là số.")
+        elif not hoten.strip():
+            st.warning("⚠️ Vui lòng nhập họ và tên.")
+        else:
+            try:
+                sheet = get_sheet(lop_sv)
+
+                # ======= TÌM DÒNG THEO CỘT MSSV =======
+                col_mssv = sheet.find("MSSV").col
+                values = sheet.col_values(col_mssv)
+                target = str(mssv).strip()
+                row_idx = None
+                for i, v in enumerate(values, start=1):
+                    if str(v).strip() == target:
+                        row_idx = i
+                        break
+
+                if not row_idx:
+                    st.error(f"❌ MSSV {mssv} không có trong danh sách.")
+                    st.stop()
+
+                # ======= KIỂM TRA HỌ TÊN =======
+                col_name = sheet.find("Họ và Tên").col
+                hoten_sheet = sheet.cell(row_idx, col_name).value
+                if normalize_name(hoten_sheet or "") != normalize_name(hoten):
+                    st.error("❌ Họ tên không khớp với MSSV trong danh sách.")
+                    st.stop()
+
+                # ======= GHI DẤU VÀ THỜI GIAN =======
+                mark_present_with_time(sheet, buoi_sv, row_idx)
+                st.success("🎉 Điểm danh thành công!")
+            except Exception as e:
+                st.error(f"❌ Lỗi khi điểm danh: {e}")
+
     st.stop()
 
 # ===================== SIDEBAR: CHỌN CHẾ ĐỘ & ĐĂNG NHẬP GV =====================
@@ -224,6 +249,7 @@ else:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
