@@ -13,7 +13,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- ID file Google Sheet của bạn
+SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # <-- ID file Google Sheet
+CLASS_EXCLUDE_KEYWORDS = {"likert", "mcq", "question", "test"}
 
 @st.cache_resource
 def _get_gspread_client():
@@ -63,16 +64,27 @@ def _get_spreadsheet():
 
 @st.cache_data(ttl=60)
 def list_classes():
-    """Danh sách lớp = danh sách worksheet titles (tự động cập nhật)."""
+    """
+    Trả về danh sách lớp (worksheet titles) đã lọc:
+    - Loại bỏ các sheet có tên chứa: likert, mcq, question, test (không phân biệt hoa/thường)
+    - Loại bỏ các sheet mặc định như 'Sheet1', 'Form Responses'
+    """
     ss = _get_spreadsheet()
-    return [ws.title for ws in ss.worksheets()]
+    titles = [ws.title for ws in ss.worksheets()]
 
-def get_sheet(lop: str):
-    ss = _get_spreadsheet()
-    try:
-        return ss.worksheet(lop)
-    except gspread.exceptions.WorksheetNotFound:
-        raise RuntimeError(f"Không tìm thấy lớp/worksheet '{lop}'. Hãy kiểm tra lại.")
+    banned_exact = {"sheet1", "form responses", "form responses 1", "responses"}
+    out = []
+    for t in titles:
+        t_norm = t.strip().lower()
+        if not t_norm:
+            continue
+        if t_norm in banned_exact:
+            continue
+        if any(k in t_norm for k in CLASS_EXCLUDE_KEYWORDS):
+            continue
+        out.append(t)
+    return out
+
 
 # ===================== TIỆN ÍCH =====================
 def get_query_params():
@@ -251,4 +263,5 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
