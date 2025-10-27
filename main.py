@@ -185,8 +185,7 @@ def group_stats_for_buoi(df: pd.DataFrame, buoi: str):
     return p, t - p, t
 
 def attendance_counts(df: pd.DataFrame, buoi: str):
-    if df.empty: 
-        return pd.Series(dtype=int)
+    if df.empty: return pd.Series(dtype=int)
     return df[buoi].fillna("").apply(lambda x: "Đi học" if x == "✅" else "Vắng").value_counts()
 
 def parse_time_series(df: pd.DataFrame, buoi: str):
@@ -216,7 +215,7 @@ def gv_authenticated() -> bool:
         st.sidebar.success("Đã đăng nhập (GV).")
         if st.sidebar.button("Đăng xuất GV", key="btn_logout_gv"):
             st.session_state["gv_auth_ok"] = False
-            st.experimental_rerun()
+            st.rerun()  # thay experimental_rerun
         return True
 
     # Form đăng nhập
@@ -225,7 +224,7 @@ def gv_authenticated() -> bool:
     if st.sidebar.button("Đăng nhập GV", key="btn_login_gv"):
         if pwd == ADMIN_PASSWORD:
             st.session_state["gv_auth_ok"] = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.sidebar.error("Sai mật khẩu.")
     return False
@@ -241,7 +240,7 @@ def sv_authenticated() -> bool:
         st.success("Đã đăng nhập (SV).")
         if st.button("Đăng xuất SV", key="btn_logout_sv"):
             st.session_state["sv_auth_ok"] = False
-            st.experimental_rerun()
+            st.rerun()  # thay experimental_rerun
         return True
 
     st.subheader("🔐 Đăng nhập Sinh viên")
@@ -249,7 +248,7 @@ def sv_authenticated() -> bool:
     if st.button("Vào trang Sinh viên", key="btn_login_sv"):
         if pwd == STUDENT_PASSWORD:
             st.session_state["sv_auth_ok"] = True
-            st.experimental_rerun()
+            st.rerun()  # thay experimental_rerun
         else:
             st.error("Sai mật khẩu.")
     return False
@@ -274,7 +273,7 @@ if mode == "👨‍🏫 Giảng viên":
     if not gv_authenticated():
         st.stop()
 
-    tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "🤖 Trợ lý AI"])
+    tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "🤖 Trợ lý lớp"])
 
     # --- TẠO MÃ QR ---
     with tab_qr:
@@ -283,10 +282,16 @@ if mode == "👨‍🏫 Giảng viên":
             st.session_state["lop"] = lop_chon
             st.session_state["buoi"] = buoi
             link = f"{WRAPPER_URL}?sv=1&lop={urllib.parse.quote(lop_chon)}&buoi={urllib.parse.quote(buoi)}"
+
+            # tạo ảnh QR và hiển thị với kích thước cố định (tránh quá to)
             img = qrcode.make(link)
             buf = io.BytesIO(); img.save(buf, format="PNG")
-            st.image(Image.open(io.BytesIO(buf.getvalue())), caption="QR cho Sinh viên", use_column_width=True)
+            st.image(Image.open(io.BytesIO(buf.getvalue())),
+                     caption="QR cho Sinh viên",
+                     width=320)  # kiểm soát kích cỡ, KHÔNG dùng use_column_width
+
             st.code(link, language="text")
+
             # đếm ngược hiển thị (UI)
             t = st.empty()
             for i in range(60, 0, -1):
@@ -461,6 +466,7 @@ if "keepalive_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
