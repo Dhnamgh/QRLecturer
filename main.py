@@ -18,6 +18,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
 # --- ĐỌC SECRETS AN TOÀN & CHẨN ĐOÁN ---
 def _must_get_secret(key: str, hint: str = ""):
     val = st.secrets.get(key)
@@ -26,51 +27,29 @@ def _must_get_secret(key: str, hint: str = ""):
             f"Thiếu khóa secret: `{key}`.\n"
             + (hint or "Vào App settings → Secrets, thêm khóa này (TOML).")
         )
-        # Hiển thị các khóa đang có (chỉ tên, không lộ giá trị)
         try:
             st.info("Các khóa đang nạp: " + ", ".join(sorted(st.secrets.to_dict().keys())))
         except Exception:
             pass
         st.stop()
-    # loại bỏ khoảng trắng thừa do copy/paste
     if isinstance(val, str):
         val = val.strip()
     return val
 
 SHEET_KEY        = _must_get_secret(
     "SHEET_KEY",
-    "ID nằm trong URL Google Sheets (giữa /d/ và /edit). Ví dụ: SHEET_KEY = \"1abcDEF...\""
+    "ID nằm giữa '/d/' và '/edit' trong URL Google Sheets. Ví dụ: SHEET_KEY=\"1abcDEF...\""
 )
 WRAPPER_URL      = _must_get_secret("WRAPPER_URL", "VD: https://<your-gh-pages>/")
 ADMIN_PASSWORD   = _must_get_secret("ADMIN_PASSWORD", "Mật khẩu GV trong secrets.")
 
 SESSION_PREFIX   = st.secrets.get("SESSION_PREFIX", "51125")
-STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")
-USE_APPEND_LOG   = bool(st.secrets.get("USE_APPEND_LOG", False))
-
-APP_URL               = st.secrets.get("APP_URL", "")
-HOST_PROVIDER         = st.secrets.get("HOST_PROVIDER", "streamlit").lower()
-HOST_IDLE_TIMEOUT_MIN = int(st.secrets.get("HOST_IDLE_TIMEOUT_MIN", 720))
-KEEPALIVE_ENABLED     = bool(st.secrets.get("KEEPALIVE_ENABLED", True))
-
-# Tối thiểu kiểm tra khối service account để tránh văng lỗi sâu bên trong
-if "google_service_account" not in st.secrets:
-    st.error("Thiếu khối [google_service_account] trong secrets."); st.stop()
-for k in ("private_key", "client_email", "token_uri"):
-    if not st.secrets["google_service_account"].get(k):
-        st.error(f"Thiếu trường `{k}` trong [google_service_account]."); st.stop()
-
-# ---- Đọc cấu hình từ secrets (đã chuẩn hoá) ----
-SHEET_KEY        = st.secrets["SHEET_KEY"]
-WRAPPER_URL      = st.secrets["WRAPPER_URL"]
-SESSION_PREFIX   = st.secrets.get("SESSION_PREFIX", "51125")
-ADMIN_PASSWORD   = st.secrets["ADMIN_PASSWORD"]                  
-STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")        
+STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")        # rỗng -> không yêu cầu SV login
 
 # Hiệu năng
-USE_APPEND_LOG   = bool(st.secrets.get("USE_APPEND_LOG", False)) # True -> ghi vào sheet "Checkins" (append-only)
+USE_APPEND_LOG   = bool(st.secrets.get("USE_APPEND_LOG", False))  # True -> ghi vào sheet Checkins (append-only)
 
-# Keep-alive (nhẹ)
+# Keep-alive
 APP_URL               = st.secrets.get("APP_URL", "")
 HOST_PROVIDER         = st.secrets.get("HOST_PROVIDER", "streamlit").lower()
 HOST_IDLE_TIMEOUT_MIN = int(st.secrets.get("HOST_IDLE_TIMEOUT_MIN", 720))
@@ -78,6 +57,13 @@ KEEPALIVE_ENABLED     = bool(st.secrets.get("KEEPALIVE_ENABLED", True))
 
 # Loại trừ sheet phụ
 CLASS_EXCLUDE_KEYWORDS = {"likert", "mcq", "question", "test"}
+
+# ==== Kiểm tra service account tối thiểu ====
+if "google_service_account" not in st.secrets:
+    st.error("Thiếu khối [google_service_account] trong secrets."); st.stop()
+for k in ("private_key", "client_email", "token_uri"):
+    if not st.secrets["google_service_account"].get(k):
+        st.error(f"Thiếu trường `{k}` trong [google_service_account]."); st.stop()
 
 # ===================== KẾT NỐI SHEETS =====================
 @st.cache_resource
@@ -100,8 +86,10 @@ def list_classes():
     names = []
     for ws in ss.worksheets():
         t = (ws.title or "").strip()
-        if not t: continue
-        if any(k in t.lower() for k in CLASS_EXCLUDE_KEYWORDS): continue
+        if not t: 
+            continue
+        if any(k in t.lower() for k in CLASS_EXCLUDE_KEYWORDS):
+            continue
         names.append(t)
     return names
 
@@ -130,7 +118,8 @@ def _with_retry(fn, retries=5):
         try:
             return fn()
         except Exception:
-            if i == retries - 1: raise
+            if i == retries - 1: 
+                raise
             time.sleep((2 ** i) * 0.4 + random.random() * 0.25)
 
 @st.cache_data(ttl=60)
@@ -151,18 +140,20 @@ def _get_mssv_map(sheet_key: str, ws_title: str) -> dict:
     m = {}
     for i, v in enumerate(vals, start=1):
         vv = str(v).strip()
-        if vv: m[vv] = i
+        if vv: 
+            m[vv] = i
     return m
 
 def sheet_to_df(sheet) -> pd.DataFrame:
     vals = _with_retry(lambda: sheet.get_all_values())
-    if not vals: return pd.DataFrame()
+    if not vals: 
+        return pd.DataFrame()
     return pd.DataFrame(vals[1:], columns=vals[0])
 
 # ===================== GHI ĐIỂM DANH =====================
 def mark_present_with_time(sheet, buoi: str, row_idx: int):
     """
-    Cập nhật dấu ✅ và timestamp trong 1 request -> giảm nghẽn khi 200 SV cùng ghi.
+    Cập nhật dấu ✅ và timestamp trong 1 request -> giảm nghẽn khi đông SV.
     """
     idx = _get_col_indices(SHEET_KEY, sheet.title, buoi)
     c_diem, c_time = idx["diem"], idx["time"]
@@ -172,8 +163,7 @@ def mark_present_with_time(sheet, buoi: str, row_idx: int):
 
 def append_checkin_log(ss, lop: str, buoi: str, mssv: str, hoten: str):
     """
-    Tùy chọn: ghi log vào sheet 'Checkins' (append-only) -> chịu tải cực lớn.
-    Hợp nhất vào bảng lớp sau buổi học (có thể viết thêm tool riêng).
+    Tùy chọn: ghi log vào sheet 'Checkins' (append-only).
     """
     try:
         ws = ss.worksheet("Checkins")
@@ -188,18 +178,21 @@ def find_row_by_mssv(sheet, mssv: str):
 
 # ===================== THỐNG KÊ & TRỢ LÝ =====================
 def group_stats_for_buoi(df: pd.DataFrame, buoi: str):
-    if df.empty: return 0, 0, 0
+    if df.empty: 
+        return 0, 0, 0
     p = (df[buoi].fillna("") == "✅").sum()
     t = len(df)
     return p, t - p, t
 
 def attendance_counts(df: pd.DataFrame, buoi: str):
-    if df.empty: return pd.Series(dtype=int)
+    if df.empty: 
+        return pd.Series(dtype=int)
     return df[buoi].fillna("").apply(lambda x: "Đi học" if x == "✅" else "Vắng").value_counts()
 
 def parse_time_series(df: pd.DataFrame, buoi: str):
     col = _time_col_for(buoi)
-    if df.empty or col not in df.columns: return pd.DataFrame(columns=["time", "count"])
+    if df.empty or col not in df.columns: 
+        return pd.DataFrame(columns=["time", "count"])
     ts = pd.to_datetime(df[col], errors="coerce").dropna().dt.floor("T").value_counts().sort_index()
     return pd.DataFrame({"time": ts.index, "count": ts.values})
 
@@ -210,40 +203,53 @@ def infer_buoi_from_text(s: str) -> str | None:
 
 def classify_intent(s: str) -> str:
     s = _vn_norm(s)
-    if "vắng" in s or "absent" in s: return "absent_list"
-    if "đi học" in s or "present" in s: return "present_count"
+    if "vắng" in s or "absent" in s: 
+        return "absent_list"
+    if "đi học" in s or "present" in s: 
+        return "present_count"
     return "rate_overall"
 
 # ===================== XÁC THỰC =====================
 def gv_authenticated() -> bool:
-    if st.session_state.get("gv_auth_ok"): return True
+    # Đã đăng nhập -> hiện nút Đăng xuất ở sidebar
+    if st.session_state.get("gv_auth_ok"):
+        st.sidebar.success("Đã đăng nhập (GV).")
+        if st.sidebar.button("Đăng xuất GV", key="btn_logout_gv"):
+            st.session_state["gv_auth_ok"] = False
+            st.experimental_rerun()
+        return True
+
+    # Form đăng nhập
     st.sidebar.subheader("Đăng nhập giảng viên")
-    pwd = st.sidebar.text_input("Mật khẩu GV", type="password")
-    if st.sidebar.button("Đăng nhập GV"):
+    pwd = st.sidebar.text_input("Mật khẩu GV", type="password", key="gv_pwd")
+    if st.sidebar.button("Đăng nhập GV", key="btn_login_gv"):
         if pwd == ADMIN_PASSWORD:
             st.session_state["gv_auth_ok"] = True
-            st.sidebar.success("Đăng nhập thành công.")
-            return True
+            st.experimental_rerun()
         else:
             st.sidebar.error("Sai mật khẩu.")
     return False
 
 def sv_authenticated() -> bool:
     """
-    Đăng nhập Sinh viên bằng STUDENT_PASSWORD trong secrets.
-    Nếu secrets không có hoặc rỗng -> không cần đăng nhập SV.
+    Đăng nhập SV bằng STUDENT_PASSWORD (nếu có). Nếu rỗng -> vào thẳng.
     """
     if not STUDENT_PASSWORD:
         return True
+
     if st.session_state.get("sv_auth_ok"):
+        st.success("Đã đăng nhập (SV).")
+        if st.button("Đăng xuất SV", key="btn_logout_sv"):
+            st.session_state["sv_auth_ok"] = False
+            st.experimental_rerun()
         return True
+
     st.subheader("🔐 Đăng nhập Sinh viên")
-    pwd = st.text_input("Mật khẩu SV", type="password")
-    if st.button("Vào trang Sinh viên"):
+    pwd = st.text_input("Mật khẩu SV", type="password", key="sv_pwd")
+    if st.button("Vào trang Sinh viên", key="btn_login_sv"):
         if pwd == STUDENT_PASSWORD:
             st.session_state["sv_auth_ok"] = True
-            st.success("Đăng nhập Sinh viên thành công.")
-            return True
+            st.experimental_rerun()
         else:
             st.error("Sai mật khẩu.")
     return False
@@ -252,27 +258,28 @@ def sv_authenticated() -> bool:
 st.title("🧾 Hệ thống điểm danh QR")
 
 st.sidebar.title("Điều hướng")
-mode = st.sidebar.radio("Chọn chế độ", ["👨‍🏫 Giảng viên", "🎓 Sinh viên"], index=0)
+mode = st.sidebar.radio("Chọn chế độ", ["👨‍🏫 Giảng viên", "🎓 Sinh viên"], index=0, key="mode_radio")
 
 classes = list_classes()
 if not classes:
     st.warning("Không tìm thấy lớp hợp lệ trong Spreadsheet.")
     st.stop()
 
-lop_chon = st.selectbox("Chọn lớp", classes)
-buoi = st.selectbox("Chọn buổi", [f"Buổi {i}" for i in range(1, 13)])
+# GÁN key để tránh trùng element ID giữa các phần
+lop_chon = st.selectbox("Chọn lớp", classes, key="class_global")
+buoi = st.selectbox("Chọn buổi", [f"Buổi {i}" for i in range(1, 13)], key="buoi_global")
 
 # ---------- GIẢNG VIÊN ----------
 if mode == "👨‍🏫 Giảng viên":
     if not gv_authenticated():
         st.stop()
 
-    tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "🤖 Trợ lý lớp"])
+    tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "🤖 Trợ lý AI"])
 
     # --- TẠO MÃ QR ---
     with tab_qr:
         st.subheader("Tạo mã QR điểm danh")
-        if st.button("Tạo mã QR mới", use_container_width=True):
+        if st.button("Tạo mã QR mới", use_container_width=True, key="btn_make_qr"):
             st.session_state["lop"] = lop_chon
             st.session_state["buoi"] = buoi
             link = f"{WRAPPER_URL}?sv=1&lop={urllib.parse.quote(lop_chon)}&buoi={urllib.parse.quote(buoi)}"
@@ -280,7 +287,7 @@ if mode == "👨‍🏫 Giảng viên":
             buf = io.BytesIO(); img.save(buf, format="PNG")
             st.image(Image.open(io.BytesIO(buf.getvalue())), caption="QR cho Sinh viên", use_column_width=True)
             st.code(link, language="text")
-            # đồng hồ đếm (UI) — không ảnh hưởng backend
+            # đếm ngược hiển thị (UI)
             t = st.empty()
             for i in range(60, 0, -1):
                 t.markdown(f"⏳ Hiệu lực còn: **{i} giây**"); time.sleep(1)
@@ -321,7 +328,7 @@ if mode == "👨‍🏫 Giảng viên":
     # --- TRỢ LÝ LỚP ---
     with tab_ai:
         st.subheader("Trợ lý lớp (hỏi nhanh)")
-        q = st.text_input("Ví dụ: 'Vắng buổi 2?', 'Tỷ lệ buổi 3?'")
+        q = st.text_input("Ví dụ: 'Vắng buổi 2?', 'Tỷ lệ buổi 3?'", key="qa_input")
         if q:
             try:
                 buoi_q = infer_buoi_from_text(q) or buoi
@@ -360,8 +367,8 @@ else:
         st.info(f"Lớp: **{lop_sv}** • {buoi_sv}")
 
         st.write(f"MSSV có tiền tố: **{SESSION_PREFIX}**")
-        mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
-        hoten = st.text_input("Nhập họ và tên")
+        mssv_tail = st.text_input("Nhập 4 số cuối MSSV", key="mssv_tail_qr")
+        hoten = st.text_input("Nhập họ và tên", key="hoten_qr")
 
         # gợi ý theo 4 số cuối
         try:
@@ -375,7 +382,7 @@ else:
         except Exception:
             pass
 
-        if st.button("Xác nhận điểm danh", use_container_width=True):
+        if st.button("Xác nhận điểm danh", use_container_width=True, key="btn_checkin_qr"):
             try:
                 ss = _get_spreadsheet()
                 sheet = ss.worksheet(lop_sv)
@@ -398,12 +405,12 @@ else:
 
     else:
         # Không đi qua QR
-        lop = st.selectbox("Chọn lớp", classes)
-        buoi_sv = st.selectbox("Chọn buổi", [f"Buổi {i}" for i in range(1, 13)])
+        lop = st.selectbox("Chọn lớp", classes, key="class_sv_manual")
+        buoi_sv = st.selectbox("Chọn buổi", [f"Buổi {i}" for i in range(1, 13)], key="buoi_sv_manual")
         st.write(f"MSSV có tiền tố: **{SESSION_PREFIX}**")
-        mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
-        hoten = st.text_input("Nhập họ và tên")
-        if st.button("Xác nhận điểm danh", use_container_width=True):
+        mssv_tail = st.text_input("Nhập 4 số cuối MSSV", key="mssv_tail_manual")
+        hoten = st.text_input("Nhập họ và tên", key="hoten_manual")
+        if st.button("Xác nhận điểm danh", use_container_width=True, key="btn_checkin_manual"):
             try:
                 ss = _get_spreadsheet()
                 sheet = ss.worksheet(lop)
@@ -430,25 +437,31 @@ def _calc_keepalive_interval():
     return max(60, HOST_IDLE_TIMEOUT_MIN * 60 - buffer - random.randint(0, 30))
 
 def _keep_alive_ping():
-    if not KEEPALIVE_ENABLED: return
+    if not KEEPALIVE_ENABLED: 
+        return
     url = (APP_URL or "").strip()
-    if not url: return
-    try: requests.get(url, timeout=6)
-    except Exception: pass
+    if not url: 
+        return
+    try: 
+        requests.get(url, timeout=6)
+    except Exception: 
+        pass
     while True:
         time.sleep(_calc_keepalive_interval())
-        try: requests.get(url, timeout=6)
-        except Exception: pass
+        try: 
+            requests.get(url, timeout=6)
+        except Exception: 
+            pass
 
 if "keepalive_started" not in st.session_state:
     threading.Thread(target=_keep_alive_ping, daemon=True).start()
     st.session_state["keepalive_started"] = True
 
-
 # ---------- FOOTER  ----------
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
