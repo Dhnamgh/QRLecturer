@@ -18,13 +18,54 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+# --- ĐỌC SECRETS AN TOÀN & CHẨN ĐOÁN ---
+def _must_get_secret(key: str, hint: str = ""):
+    val = st.secrets.get(key)
+    if val in (None, ""):
+        st.error(
+            f"Thiếu khóa secret: `{key}`.\n"
+            + (hint or "Vào App settings → Secrets, thêm khóa này (TOML).")
+        )
+        # Hiển thị các khóa đang có (chỉ tên, không lộ giá trị)
+        try:
+            st.info("Các khóa đang nạp: " + ", ".join(sorted(st.secrets.to_dict().keys())))
+        except Exception:
+            pass
+        st.stop()
+    # loại bỏ khoảng trắng thừa do copy/paste
+    if isinstance(val, str):
+        val = val.strip()
+    return val
+
+SHEET_KEY        = _must_get_secret(
+    "SHEET_KEY",
+    "ID nằm trong URL Google Sheets (giữa /d/ và /edit). Ví dụ: SHEET_KEY = \"1abcDEF...\""
+)
+WRAPPER_URL      = _must_get_secret("WRAPPER_URL", "VD: https://<your-gh-pages>/")
+ADMIN_PASSWORD   = _must_get_secret("ADMIN_PASSWORD", "Mật khẩu GV trong secrets.")
+
+SESSION_PREFIX   = st.secrets.get("SESSION_PREFIX", "51125")
+STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")
+USE_APPEND_LOG   = bool(st.secrets.get("USE_APPEND_LOG", False))
+
+APP_URL               = st.secrets.get("APP_URL", "")
+HOST_PROVIDER         = st.secrets.get("HOST_PROVIDER", "streamlit").lower()
+HOST_IDLE_TIMEOUT_MIN = int(st.secrets.get("HOST_IDLE_TIMEOUT_MIN", 720))
+KEEPALIVE_ENABLED     = bool(st.secrets.get("KEEPALIVE_ENABLED", True))
+
+# Tối thiểu kiểm tra khối service account để tránh văng lỗi sâu bên trong
+if "google_service_account" not in st.secrets:
+    st.error("Thiếu khối [google_service_account] trong secrets."); st.stop()
+for k in ("private_key", "client_email", "token_uri"):
+    if not st.secrets["google_service_account"].get(k):
+        st.error(f"Thiếu trường `{k}` trong [google_service_account]."); st.stop()
 
 # ---- Đọc cấu hình từ secrets (đã chuẩn hoá) ----
 SHEET_KEY        = st.secrets["SHEET_KEY"]
 WRAPPER_URL      = st.secrets["WRAPPER_URL"]
 SESSION_PREFIX   = st.secrets.get("SESSION_PREFIX", "51125")
-ADMIN_PASSWORD   = st.secrets["ADMIN_PASSWORD"]                  # GV
-STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")        # SV (để trống => không hỏi mật khẩu SV)
+ADMIN_PASSWORD   = st.secrets["ADMIN_PASSWORD"]                  
+STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")        
 
 # Hiệu năng
 USE_APPEND_LOG   = bool(st.secrets.get("USE_APPEND_LOG", False)) # True -> ghi vào sheet "Checkins" (append-only)
@@ -408,6 +449,7 @@ if "keepalive_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
