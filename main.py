@@ -30,7 +30,7 @@ def _must(key, hint=""):
 
 SHEET_KEY      = _must("SHEET_KEY", "ID giữa /d/ và /edit của Google Sheet.")
 WRAPPER_URL    = _must("WRAPPER_URL", "VD: https://<github-pages>/")
-SESSION_PREFIX = st.secrets.get("SESSION_PREFIX", "11")
+SESSION_PREFIX = st.secrets.get("SESSION_PREFIX", "51125")
 ADMIN_PASSWORD = _must("ADMIN_PASSWORD", "Mật khẩu GV.")
 STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")  # rỗng = không yêu cầu SV nhập mật khẩu
 
@@ -237,7 +237,7 @@ if student_only:
         st.stop()
     st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
 
-    # (tuỳ chọn) SV nhập mật khẩu STUDENT_PASSWORD trong secrets
+    # (tuỳ chọn) SV nhập mật khẩu nếu bạn đặt STUDENT_PASSWORD trong secrets
     if STUDENT_PASSWORD:
         sv_pwd = st.text_input("Mật khẩu SV", type="password", key="sv_pwd_qr")
         if not sv_pwd:
@@ -245,78 +245,47 @@ if student_only:
         if sv_pwd != STUDENT_PASSWORD:
             st.error("Sai mật khẩu SV."); st.stop()
 
-    # 2 số đầu cố định (ví dụ: 11)
-    st.write(f"Mã số sinh viên bắt đầu bằng: **{SESSION_PREFIX}**")
-
-    # SV chỉ nhập 4 số cuối
-    mssv_tail = st.text_input("Nhập 4 số cuối của MSSV", max_chars=4)
-    mssv_tail = (mssv_tail or "").strip()
-
+    st.write(f"Mã số sinh viên: {SESSION_PREFIX}")
+    mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
+    mssv = SESSION_PREFIX + (mssv_tail or "").strip()
     hoten = st.text_input("Nhập họ và tên")
 
-    # Gợi ý tên theo MSSV nếu tail hợp lệ
-    mssv = None
-    if len(mssv_tail) == 4 and mssv_tail.isdigit():
-        mssv = SESSION_PREFIX + mssv_tail
+    # Gợi ý tên theo 4 số (như bản gốc)
+    if mssv_tail and len(mssv_tail.strip()) == 4 and mssv_tail.strip().isdigit():
         try:
             sheet_preview = get_sheet(lop_sv)
             col_mssv = with_retry(lambda: sheet_preview.find("MSSV").col)
             col_name = with_retry(lambda: sheet_preview.find("Họ và Tên").col)
             values = with_retry(lambda: sheet_preview.col_values(col_mssv))
-            row_idx_prev = next(
-                (i for i, v in enumerate(values, start=1) if str(v).strip() == mssv),
-                None
-            )
+            row_idx_prev = next((i for i, v in enumerate(values, start=1) if str(v).strip() == mssv), None)
             if row_idx_prev:
                 preview_name = with_retry(lambda: sheet_preview.cell(row_idx_prev, col_name).value)
                 st.caption(f"🔎 Khớp MSSV: **{mssv}** • Họ tên: **{preview_name}**")
         except Exception:
-            # Không làm app crash nếu lỗi preview
             pass
 
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
-
-        # Kiểm tra 4 số cuối
-        if not mssv_tail:
-            st.warning("⚠️ Vui lòng nhập 4 số cuối của MSSV.")
-            st.stop()
-
-        if len(mssv_tail) != 4 or not mssv_tail.isdigit():
-            st.warning("⚠️ 4 số cuối MSSV phải là 4 chữ số.")
-            st.stop()
-
-        if not hoten or not hoten.strip():
+        if not mssv.strip().isdigit():
+            st.warning("⚠️ MSSV phải là số.")
+        elif not hoten.strip():
             st.warning("⚠️ Vui lòng nhập họ và tên.")
-            st.stop()
-
-        # Đến đây chắc chắn hợp lệ → tạo MSSV đầy đủ
-        mssv = SESSION_PREFIX + mssv_tail
-
-        try:
-            sheet = get_sheet(lop_sv)
-            if sheet is None:
-                st.error("❌ Không truy cập được sheet điểm danh.")
-                st.stop()
-
-            row_idx = find_row_by_mssv(sheet, mssv)
-            if not row_idx:
-                st.error(f"❌ MSSV {mssv} không có trong danh sách.")
-                st.stop()
-
-            col_name = with_retry(lambda: sheet.find("Họ và Tên").col)
-            hoten_sheet = with_retry(lambda: sheet.cell(row_idx, col_name).value)
-
-            if normalize_name(hoten_sheet or "") != normalize_name(hoten or ""):
-                st.error("❌ Họ tên không khớp với MSSV.")
-            else:
-                mark_present_with_time(sheet, buoi_sv, row_idx)
-                st.success("🎉 Điểm danh thành công!")
-
-        except Exception as e:
-            st.error(f"❌ Lỗi khi điểm danh: {e}")
-
+        else:
+            try:
+                sheet = get_sheet(lop_sv)
+                row_idx = find_row_by_mssv(sheet, mssv)
+                if not row_idx:
+                    st.error(f"❌ MSSV {mssv} không có trong danh sách.")
+                    st.stop()
+                col_name = with_retry(lambda: sheet.find("Họ và Tên").col)
+                hoten_sheet = with_retry(lambda: sheet.cell(row_idx, col_name).value)
+                if normalize_name(hoten_sheet or "") != normalize_name(hoten):
+                    st.error("❌ Họ tên không khớp với MSSV.")
+                else:
+                    mark_present_with_time(sheet, buoi_sv, row_idx)
+                    st.success("🎉 Điểm danh thành công!")
+            except Exception as e:
+                st.error(f"❌ Lỗi khi điểm danh: {e}")
     st.stop()
-
 
 # ===== GIẢNG VIÊN =====
 st.title("🧾 Hệ thống điểm danh QR")
@@ -502,29 +471,3 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
