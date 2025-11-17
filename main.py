@@ -246,8 +246,12 @@ if student_only:
             st.error("Sai mật khẩu SV."); st.stop()
 
     st.write(f"Mã số sinh viên: {SESSION_PREFIX}")
-    mssv_tail = st.text_input("Nhập 4 số cuối của MSSV")
-    mssv = SESSION_PREFIX + (mssv_tail or "").strip()
+    mssv_tail = st.text_input("Nhập 4 số cuối của MSSV", max_chars=4)
+    mssv_tail = (mssv_tail or "").strip()
+    if len(mssv_tail) == 4 and mssv_tail.isdigit():
+        mssv = SESSION_PREFIX + mssv_tail
+    else:
+       mssv = None
     hoten = st.text_input("Nhập họ và tên")
 
     # Gợi ý tên theo 4 số (như bản gốc)
@@ -265,8 +269,14 @@ if student_only:
             pass
 
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
-        if not mssv.strip().isdigit():
-            st.warning("⚠️ MSSV phải là số.")
+        if not mssv_tail:
+            st.warning("⚠️ Vui lòng nhập 4 số cuối của MSSV.")
+        elif len(mssv_tail) != 4 or not mssv_tail.isdigit():
+            st.warning("⚠️ 4 số cuối MSSV phải là 4 chữ số.")
+        else:
+            mssv = SESSION_PREFIX + mssv_tail
+
+            
         elif not hoten.strip():
             st.warning("⚠️ Vui lòng nhập họ và tên.")
         else:
@@ -471,6 +481,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
