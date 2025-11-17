@@ -30,7 +30,7 @@ def _must(key, hint=""):
 
 SHEET_KEY      = _must("SHEET_KEY", "ID giữa /d/ và /edit của Google Sheet.")
 WRAPPER_URL    = _must("WRAPPER_URL", "VD: https://<github-pages>/")
-SESSION_PREFIX = st.secrets.get("SESSION_PREFIX", "51125")
+SESSION_PREFIX = st.secrets.get("SESSION_PREFIX", "11")
 ADMIN_PASSWORD = _must("ADMIN_PASSWORD", "Mật khẩu GV.")
 STUDENT_PASSWORD = st.secrets.get("STUDENT_PASSWORD", "")  # rỗng = không yêu cầu SV nhập mật khẩu
 
@@ -246,7 +246,7 @@ if student_only:
             st.error("Sai mật khẩu SV."); st.stop()
 
     st.write(f"Mã số sinh viên: {SESSION_PREFIX}")
-    mssv_tail = st.text_input("Nhập MSSV")
+    mssv_tail = st.text_input("Nhập 4 số cuối của MSSV")
     mssv = SESSION_PREFIX + (mssv_tail or "").strip()
     hoten = st.text_input("Nhập họ và tên")
 
@@ -471,6 +471,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
