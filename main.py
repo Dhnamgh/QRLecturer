@@ -270,37 +270,37 @@ if student_only:
 
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
 
-    # Kiểm tra MSSV tail
-    if not mssv_tail:
-        st.warning("⚠️ Vui lòng nhập 4 số cuối của MSSV.")
-        st.stop()
-
-    elif len(mssv_tail) != 4 or not mssv_tail.isdigit():
-        st.warning("⚠️ 4 số cuối MSSV phải là 4 chữ số.")
-        st.stop()
-
-    elif not hoten.strip():
-        st.warning("⚠️ Vui lòng nhập họ và tên.")
-        st.stop()
-
-    # MSSV đầy đủ
-    mssv = SESSION_PREFIX + mssv_tail
-
-    try:
-        sheet = get_sheet(lop_sv)
-        row_idx = find_row_by_mssv(sheet, mssv)
-        if not row_idx:
-            st.error(f"❌ MSSV {mssv} không có trong danh sách.")
+        # Kiểm tra MSSV tail
+        if not mssv_tail:
+            st.warning("⚠️ Vui lòng nhập 4 số cuối của MSSV.")
             st.stop()
-
-        col_name = with_retry(lambda: sheet.find("Họ và Tên").col)
-        hoten_sheet = with_retry(lambda: sheet.cell(row_idx, col_name).value)
-
-        if normalize_name(hoten_sheet or "") != normalize_name(hoten):
-            st.error("❌ Họ tên không khớp với MSSV.")
-        else:
-            mark_present_with_time(sheet, buoi_sv, row_idx)
-            st.success("🎉 Điểm danh thành công!")
+    
+        elif len(mssv_tail) != 4 or not mssv_tail.isdigit():
+            st.warning("⚠️ 4 số cuối MSSV phải là 4 chữ số.")
+            st.stop()
+    
+        elif not hoten.strip():
+            st.warning("⚠️ Vui lòng nhập họ và tên.")
+            st.stop()
+    
+        # MSSV đầy đủ
+        mssv = SESSION_PREFIX + mssv_tail
+    
+        try:
+            sheet = get_sheet(lop_sv)
+            row_idx = find_row_by_mssv(sheet, mssv)
+            if not row_idx:
+                st.error(f"❌ MSSV {mssv} không có trong danh sách.")
+                st.stop()
+    
+            col_name = with_retry(lambda: sheet.find("Họ và Tên").col)
+            hoten_sheet = with_retry(lambda: sheet.cell(row_idx, col_name).value)
+    
+            if normalize_name(hoten_sheet or "") != normalize_name(hoten):
+                st.error("❌ Họ tên không khớp với MSSV.")
+            else:
+                mark_present_with_time(sheet, buoi_sv, row_idx)
+                st.success("🎉 Điểm danh thành công!")
 
     except Exception as e:
         st.error(f"❌ Lỗi khi điểm danh: {e}")
@@ -490,6 +490,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
