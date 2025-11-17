@@ -418,34 +418,41 @@ tab_qr, tab_stats, tab_ai = st.tabs(["🧾 Tạo mã QR", "📊 Thống kê", "�
 with tab_qr:
     st.subheader("📸 Tạo mã QR điểm danh")
     st.caption("Mã QR chứa thông tin Lớp & Buổi; sinh viên quét sẽ mở trang bọc (wrapper).")
+
     if st.button("Tạo mã QR", key="btn_make_qr", use_container_width=True):
         st.session_state["lop"] = lop_chon
         st.session_state["buoi"] = buoi
 
-        # ⏱ Hạn sử dụng: 60 giây từ lúc tạo
-        expires_ts = int(time.time()) + 60  # cần import time ở đầu file
+        # ⏱ Hạn sử dụng QR: 60 giây kể từ lúc tạo
+        expires_ts = int(time.time()) + 60   # cần: import time ở đầu file
+        st.session_state["qr_exp"] = expires_ts
 
+        # 👉 NHỚ: gắn exp vào link QR
         qr_link = (
             f"{WRAPPER_URL}"
             f"?sv=1"
             f"&lop={urllib.parse.quote(lop_chon)}"
             f"&buoi={urllib.parse.quote(buoi)}"
-            f"&exp={expires_ts}"          # 👈 THÊM tham số exp vào QR
+            f"&exp={expires_ts}"
         )
 
         img_qr = qrcode.make(qr_link)
-        buf = io.BytesIO(); img_qr.save(buf, format="PNG"); buf.seek(0)
+        buf = io.BytesIO()
+        img_qr.save(buf, format="PNG")
+        buf.seek(0)
         img_obj = Image.open(buf)
+
         # căn giữa, không hiển thị link
         c1, c2, c3 = st.columns([1, 1, 1])
         with c2:
             st.image(img_obj, width=320)
-        # đếm ngược (UI)
+
+        # đếm ngược (chỉ là UI cho GV)
         t = st.empty()
         for i in range(60, 0, -1):
-            t.markdown(f"⏳ Hiệu lực còn: **{i} giây**"); time.sleep(1)
+            t.markdown(f"⏳ Hiệu lực còn: **{i} giây**")
+            time.sleep(1)
         t.markdown("✅ Hết thời gian hiệu lực.")
-
 
 # ===== TAB: THỐNG KÊ =====
 with tab_stats:
@@ -574,6 +581,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam")
+
 
 
 
