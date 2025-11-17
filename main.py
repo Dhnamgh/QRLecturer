@@ -375,7 +375,18 @@ with tab_qr:
     if st.button("Tạo mã QR", key="btn_make_qr", use_container_width=True):
         st.session_state["lop"] = lop_chon
         st.session_state["buoi"] = buoi
-        qr_link = f"{WRAPPER_URL}?sv=1&lop={urllib.parse.quote(lop_chon)}&buoi={urllib.parse.quote(buoi)}"
+
+        # ⏱ Hạn sử dụng: 60 giây từ lúc tạo
+        expires_ts = int(time.time()) + 60  # cần import time ở đầu file
+
+        qr_link = (
+            f"{WRAPPER_URL}"
+            f"?sv=1"
+            f"&lop={urllib.parse.quote(lop_chon)}"
+            f"&buoi={urllib.parse.quote(buoi)}"
+            f"&exp={expires_ts}"          # 👈 THÊM tham số exp vào QR
+        )
+
         img_qr = qrcode.make(qr_link)
         buf = io.BytesIO(); img_qr.save(buf, format="PNG"); buf.seek(0)
         img_obj = Image.open(buf)
@@ -388,6 +399,7 @@ with tab_qr:
         for i in range(60, 0, -1):
             t.markdown(f"⏳ Hiệu lực còn: **{i} giây**"); time.sleep(1)
         t.markdown("✅ Hết thời gian hiệu lực.")
+
 
 # ===== TAB: THỐNG KÊ =====
 with tab_stats:
@@ -516,4 +528,5 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
