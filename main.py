@@ -225,79 +225,92 @@ student_only = (qp.get("sv") == "1") or ("buoi" in qp) or ("lop" in qp)
 
 # ===== SINH VIÊN (chỉ qua QR) =====
 if student_only:
-    # Lấy thông tin buổi & lớp từ query
-    buoi_sv = qp.get("buoi", "Buổi 1")
-    lop_sv = qp.get("lop")
-    if not lop_sv:
-        classes = list_classes()
-        lop_sv = classes[0] if classes else None
 
-    # ⏱ Kiểm tra hạn sử dụng của QR (tham số exp trong URL)
-    raw_exp = qp.get("exp")  # tuỳ cách parse, có thể là str hoặc list
+    # -------------------------
+    # 1. KIỂM TRA HẾT HẠN QR
+    # -------------------------
+    raw_exp = qp.get("exp")  # từ query string
     if isinstance(raw_exp, (list, tuple)):
         raw_exp = raw_exp[0] if raw_exp else None
 
-    # Nếu chưa có từ query nhưng đã lưu session thì dùng lại
+    # Nếu reload app → lấy exp từ session
     if not raw_exp:
         raw_exp = st.session_state.get("sv_exp")
 
     if raw_exp:
         try:
             exp_ts = int(str(raw_exp).strip())
-            st.session_state["sv_exp"] = exp_ts  # lưu lại cho rerun sau
-
+            st.session_state["sv_exp"] = exp_ts
             if time.time() > exp_ts:
                 st.title("🎓 Điểm danh sinh viên")
-                st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
-                st.error("⏰ Mã QR này đã hết thời hạn hiệu lực. Vui lòng quét mã mới từ giảng viên.")
+                st.error("⏰ Mã QR đã hết thời hạn hiệu lực. Vui lòng quét mã mới.")
                 st.stop()
-        except Exception:
-            # exp lỗi định dạng thì bỏ qua kiểm tra
+        except:
             pass
 
-    # 🔐 Nếu đã điểm danh trong session này thì KHÔNG cho nhập lại nữa
+    # -------------------------
+    # 2. KHÓA – SV ĐÃ ĐIỂM DANH
+    # -------------------------
     if st.session_state.get("sv_locked"):
         locked_mssv = st.session_state.get("sv_mssv", "")
         locked_hoten = st.session_state.get("sv_hoten", "")
 
         st.title("🎓 Điểm danh sinh viên")
-        st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
         st.success(f"✅ Bạn đã điểm danh với MSSV **{locked_mssv}**, họ tên **{locked_hoten}**.")
-        st.info("Nếu cần chỉnh sửa, vui lòng liên hệ giảng viên.")
+        st.info("Nếu cần chỉnh sửa thông tin, vui lòng liên hệ giảng viên.")
         st.stop()
 
-    # ===== Form điểm danh bình thường =====
+    # -------------------------
+    # 3. LẤY CLASS & BUỔI
+    # -------------------------
+    buoi_sv = qp.get("buoi", "Buổi 1")
+    lop_sv = qp.get("lop")
+    if not lop_sv:
+        classes = list_classes()
+        lop_sv = classes[0] if classes else None
+
     st.title("🎓 Điểm danh sinh viên")
     if not lop_sv:
         st.error("Không xác định được lớp.")
         st.stop()
     st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
 
-    # SV nhập mật khẩu đã đặt STUDENT_PASSWORD trong secrets (nếu có)
+    # -------------------------
+    # 4. NHẬP MẬT KHẨU SV (nếu dùng)
+    # -------------------------
     if STUDENT_PASSWORD:
         sv_pwd = st.text_input("Mật khẩu SV", type="password", key="sv_pwd_qr")
         if not sv_pwd:
             st.stop()
         if sv_pwd != STUDENT_PASSWORD:
-            st.error("Sai mật khẩu SV."); st.stop()
+            st.error("Sai mật khẩu SV.")
+            st.stop()
 
-    # 2 số đầu cố định là SESSION_PREFIX, SV chỉ nhập 4 số cuối
-    st.write(f"Mã số sinh viên bắt đầu bằng: **{SESSION_PREFIX}**")
+    # -------------------------
+    # 5. NHẬP MSSV + TÊN
+    # -------------------------
+    st.write(f"MSSV phải bắt đầu bằng **{SESSION_PREFIX}**")
     mssv_tail = st.text_input("Nhập 4 số cuối MSSV", max_chars=4, key="mssv_tail_qr")
     mssv_tail = (mssv_tail or "").strip()
+
     hoten = st.text_input("Nhập họ và tên", key="hoten_qr")
 
-    # Gợi ý tên theo MSSV nếu tail hợp lệ
+    # -------------------------
+    # 6. GỢI Ý TÊN THEO MSSV
+    # -------------------------
     if len(mssv_tail) == 4 and mssv_tail.isdigit():
         mssv_preview = SESSION_PREFIX + mssv_tail
+
         try:
             sheet_preview = get_sheet(lop_sv)
             cell_mssv = with_retry(lambda: sheet_preview.find("MSSV"))
             cell_name = with_retry(lambda: sheet_preview.find("Họ và Tên"))
+
             if cell_mssv and cell_name:
                 col_mssv = cell_mssv.col
                 col_name = cell_name.col
                 values = with_retry(lambda: sheet_preview.col_values(col_mssv))
+
                 row_idx_prev = next(
                     (i for i, v in enumerate(values, start=1)
                      if str(v).strip() == mssv_preview),
@@ -309,19 +322,24 @@ if student_only:
         except Exception:
             pass
 
+    # -------------------------
+    # 7. XÁC NHẬN ĐIỂM DANH
+    # -------------------------
     if st.button("✅ Xác nhận điểm danh", use_container_width=True):
-        # Kiểm tra đầu vào
+
+        # kiểm tra hợp lệ
         if not mssv_tail:
-            st.warning("⚠️ Vui lòng nhập 4 số cuối của MSSV.")
+            st.warning("⚠️ Vui lòng nhập 4 số cuối MSSV.")
             st.stop()
-        elif len(mssv_tail) != 4 or not mssv_tail.isdigit():
+
+        if len(mssv_tail) != 4 or not mssv_tail.isdigit():
             st.warning("⚠️ 4 số cuối MSSV phải là 4 chữ số.")
             st.stop()
-        elif not hoten.strip():
+
+        if not hoten.strip():
             st.warning("⚠️ Vui lòng nhập họ và tên.")
             st.stop()
 
-        # MSSV đầy đủ
         mssv = SESSION_PREFIX + mssv_tail
 
         try:
@@ -333,28 +351,32 @@ if student_only:
 
             cell_name = with_retry(lambda: sheet.find("Họ và Tên"))
             if not cell_name:
-                st.error("❌ Không tìm thấy cột 'Họ và Tên' trong sheet.")
+                st.error("❌ Không tìm thấy cột 'Họ và Tên'.")
                 st.stop()
 
             col_name = cell_name.col
             hoten_sheet = with_retry(lambda: sheet.cell(row_idx, col_name).value)
 
-            if normalize_name(hoten_sheet or "") != normalize_name(hoten or ""):
+            if normalize_name(hoten_sheet or "") != normalize_name(hoten):
                 st.error("❌ Họ tên không khớp với MSSV.")
-            else:
-                # Ghi điểm danh + thời gian
-                mark_present_with_time(sheet, buoi_sv, row_idx)
-                st.success("🎉 Điểm danh thành công!")
-
-                # 🔐 Khóa lại cho session này, không cho sửa MSSV/họ tên nữa
-                st.session_state["sv_locked"] = True
-                st.session_state["sv_mssv"] = mssv
-                st.session_state["sv_hoten"] = hoten_sheet or hoten
-
                 st.stop()
 
-    st.stop()
+            # Ghi điểm danh
+            mark_present_with_time(sheet, buoi_sv, row_idx)
+            st.success("🎉 Điểm danh thành công!")
 
+            # 🔐 KHÓA SESSION – KHÔNG CHO SỬA LẠI
+            st.session_state["sv_locked"] = True
+            st.session_state["sv_mssv"] = mssv
+            st.session_state["sv_hoten"] = hoten_sheet or hoten
+
+            st.stop()
+
+        except Exception as e:
+            st.error(f"❌ Lỗi khi điểm danh: {e}")
+            st.stop()
+
+    st.stop()
 
 # ===== GIẢNG VIÊN =====
 st.title("🧾 Hệ thống điểm danh QR")
@@ -552,6 +574,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam")
+
 
 
 
