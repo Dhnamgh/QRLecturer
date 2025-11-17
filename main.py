@@ -304,7 +304,7 @@ if student_only:
     
         except Exception as e:
             st.error(f"❌ Lỗi khi điểm danh: {e}")
-`
+
 # ===== GIẢNG VIÊN =====
 st.title("🧾 Hệ thống điểm danh QR")
 st.sidebar.title("Giảng viên")
@@ -489,6 +489,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
