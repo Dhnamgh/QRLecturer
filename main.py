@@ -237,7 +237,7 @@ if student_only:
         st.stop()
     st.info(f"Lớp: **{lop_sv}** • Buổi: **{buoi_sv}**")
 
-    # (tuỳ chọn) SV nhập mật khẩu nếu bạn đặt STUDENT_PASSWORD trong secrets
+    # (tuỳ chọn) SV nhập mật khẩu STUDENT_PASSWORD trong secrets
     if STUDENT_PASSWORD:
         sv_pwd = st.text_input("Mật khẩu SV", type="password", key="sv_pwd_qr")
         if not sv_pwd:
@@ -246,7 +246,7 @@ if student_only:
             st.error("Sai mật khẩu SV."); st.stop()
 
     st.write(f"Mã số sinh viên: {SESSION_PREFIX}")
-    mssv_tail = st.text_input("Nhập 4 số cuối MSSV")
+    mssv_tail = st.text_input("Nhập MSSV")
     mssv = SESSION_PREFIX + (mssv_tail or "").strip()
     hoten = st.text_input("Nhập họ và tên")
 
@@ -471,6 +471,7 @@ if "ka_started" not in st.session_state:
 
 st.markdown("---")
 st.markdown("© Bản quyền thuộc về TS. Đào Hồng Nam - Đại học Y Dược Thành phố Hồ Chí Minh.")
+
 
 
 
