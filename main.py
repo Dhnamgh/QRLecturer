@@ -224,18 +224,34 @@ def _get_gspread_client():
 
 def get_sheet():
     client = _get_gspread_client()
-    ss = client.open_by_key(SHEET_KEY)
-    return ss.worksheet(WORKSHEET_NAME)
+    ss = _google_api_retry(lambda: client.open_by_key(SHEET_KEY))
+    return _google_api_retry(lambda: ss.worksheet(WORKSHEET_NAME))
+
+
+def _google_api_retry(callable_fn, retries=3, delay=1.5):
+    """Thử lại khi Google Sheets/Drive API trả lỗi tạm thời như 500/503/429."""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return callable_fn()
+        except Exception as e:
+            last_error = e
+            msg = str(e)
+            transient = any(code in msg for code in ["[500]", "[503]", "[429]", "Internal error", "Quota", "timeout", "Timeout"])
+            if not transient or attempt == retries - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+    raise last_error
 
 def load_records(sheet):
-    return sheet.get_all_records(expected_headers=None, default_blank="")
+    return _google_api_retry(lambda: sheet.get_all_records(expected_headers=None, default_blank=""))
 
 def find_header_col(sheet, header_name):
-    return sheet.find(header_name).col
+    return _google_api_retry(lambda: sheet.find(header_name)).col
 
 # ===================== CỘT THỜI GIAN CẠNH CỘT BUỔI =====================
 def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
-    headers = sheet.row_values(1)
+    headers = _google_api_retry(lambda: sheet.row_values(1))
     n_cols = len(headers)
     nxt = buoi_col + 1
     if nxt <= n_cols:
@@ -250,7 +266,7 @@ def find_or_create_time_col(sheet, buoi_col: int, buoi_header: str) -> int:
             if (("thời gian" in hl) or ("time" in hl)) and re.search(rf"\b{idx}\b", hl):
                 return i
     # tạo mới ở cột kế bên
-    sheet.update_cell(1, nxt, f"Thời gian {buoi_header}")
+    _google_api_retry(lambda: sheet.update_cell(1, nxt, f"Thời gian {buoi_header}"))
     return nxt
 
 # ===================== TOKEN QR =====================
@@ -379,7 +395,7 @@ def render_tab_stats():
     st.subheader("📊 Thống kê điểm danh theo buổi & theo Tổ")
     try:
         sheet = get_sheet()
-        headers = sheet.row_values(1)
+        headers = _google_api_retry(lambda: sheet.row_values(1))
         buoi_list = [h for h in headers if norm_search(h).startswith("buổi ")]
         buoi_chon = st.selectbox("Chọn buổi", buoi_list or ["Buổi 1"], index=0)
         records = load_records(sheet)
@@ -440,6 +456,7 @@ def render_tab_stats():
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
+        st.caption("Gợi ý: đây thường là lỗi tạm thời của Google Sheets API. Bấm chạy lại sau vài giây hoặc kiểm tra Sheet có đang mở/sửa quá nhiều cùng lúc hay không.")
 
 # ===== Trợ lý AI (nâng cấp) – chạy nội bộ, không dùng API ngoài =====
 def render_tab_ai():
@@ -588,7 +605,7 @@ def render_tab_ai():
         if not records:
             return "Không có dữ liệu trong Sheet."
 
-        headers = sheet.row_values(1)
+        headers = _google_api_retry(lambda: sheet.row_values(1))
         buoi_cols = detect_buoi_columns(headers)
         if not buoi_cols:
             return "Không tìm thấy các cột 'Buổi ...' trong Sheet."
@@ -841,9 +858,9 @@ if qp.get("sv") == "1":
                 st.rerun()
 
             # Ghi ✅ và thời gian thực
-            sheet.update_cell(cell_mssv.row, col_buoi, "✅")
+            _google_api_retry(lambda: sheet.update_cell(cell_mssv.row, col_buoi, "✅"))
             now_str = datetime.datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
-            sheet.update_cell(cell_mssv.row, time_col, now_str)
+            _google_api_retry(lambda: sheet.update_cell(cell_mssv.row, time_col, now_str))
 
             msg = f"🎉 Điểm danh thành công! MSSV **{full_mssv}** ({now_str})."
             st.success(msg)
