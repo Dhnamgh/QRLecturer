@@ -32,18 +32,18 @@ VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
+
 # ===================== GIAO DIỆN IN ẤN / MINH CHỨNG =====================
 def inject_print_friendly_css():
     st.markdown("""
     <style>
     :root {
         --print-text: #000000;
-        --print-muted: #1f2937;
-        --print-border: #d1d5db;
+        --print-muted: #111827;
+        --print-border: #9ca3af;
         --print-bg: #ffffff;
     }
 
-    /* Tổng thể: tăng tương phản, tăng kích thước chữ */
     html, body, .stApp, [data-testid="stAppViewContainer"] {
         background: var(--print-bg) !important;
         color: var(--print-text) !important;
@@ -51,42 +51,41 @@ def inject_print_friendly_css():
         line-height: 1.45 !important;
     }
 
-    /* Khối nội dung chính */
     .block-container {
         padding-top: 1.2rem !important;
         padding-bottom: 3.5rem !important;
         max-width: 1180px !important;
     }
 
-    /* Tiêu đề rõ khi chụp/in */
     h1 {
         font-size: 46px !important;
         font-weight: 900 !important;
         color: #000000 !important;
         letter-spacing: -0.5px !important;
     }
+
     h2, h3 {
         font-size: 32px !important;
         font-weight: 850 !important;
         color: #000000 !important;
     }
 
-    /* Chữ thường, label, caption */
     p, span, label, div, small {
         color: #000000 !important;
     }
+
     label, [data-testid="stWidgetLabel"] {
         font-size: 20px !important;
         font-weight: 800 !important;
         color: #000000 !important;
     }
+
     [data-testid="stCaptionContainer"], .stCaptionContainer {
         font-size: 18px !important;
         color: #111827 !important;
         font-weight: 650 !important;
     }
 
-    /* Selectbox, input, button: chữ đậm và nền sáng */
     input, textarea, select, button,
     [data-baseweb="select"] *,
     [data-testid="stTextInput"] *,
@@ -95,106 +94,90 @@ def inject_print_friendly_css():
         font-weight: 750 !important;
         color: #000000 !important;
     }
+
     [data-baseweb="select"] > div,
     [data-testid="stTextInput"] input {
         background: #f3f4f6 !important;
         border: 1.5px solid #9ca3af !important;
     }
+
     button {
         border: 1.6px solid #9ca3af !important;
         background: #ffffff !important;
     }
 
-    /* Sidebar rõ hơn khi chụp minh chứng */
-    section[data-testid="stSidebar"] {
-        background: #eef2f7 !important;
-        border-right: 1.5px solid #cbd5e1 !important;
-    }
-    section[data-testid="stSidebar"] * {
-        font-size: 19px !important;
-        font-weight: 750 !important;
-        color: #000000 !important;
+    [data-testid="stMetric"] {
+        background: #ffffff !important;
+        border: 2px solid #9ca3af !important;
+        border-radius: 14px !important;
+        padding: 18px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.18) !important;
     }
 
-    /* Tabs nổi bật */
-    button[data-baseweb="tab"] {
-        font-size: 20px !important;
-        font-weight: 850 !important;
-        color: #000000 !important;
-        padding: 0.7rem 1rem !important;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        border-bottom: 4px solid #ef4444 !important;
-    }
-
-    /* Metric: số to, đậm, dễ đọc khi đưa vào Word */
-    [data-testid="stMetricLabel"] {
+    [data-testid="stMetricLabel"] div,
+    [data-testid="stMetricLabel"] p {
         font-size: 20px !important;
         font-weight: 850 !important;
         color: #000000 !important;
     }
+
+    [data-testid="stMetricValue"] div,
     [data-testid="stMetricValue"] {
-        font-size: 44px !important;
+        font-size: 40px !important;
         font-weight: 900 !important;
         color: #000000 !important;
-        line-height: 1.1 !important;
     }
 
-    /* Thông báo success/info/warning rõ nét */
-    [data-testid="stAlert"] {
-        border: 1.7px solid #9ca3af !important;
-        border-radius: 10px !important;
-    }
-    [data-testid="stAlert"] * {
-        font-size: 20px !important;
-        font-weight: 800 !important;
-        color: #000000 !important;
-    }
-
-    /* Dataframe/bảng */
-    [data-testid="stDataFrame"] *, table * {
+    [data-testid="stDataFrame"], table {
         font-size: 18px !important;
-        font-weight: 700 !important;
         color: #000000 !important;
+        font-weight: 650 !important;
     }
 
-    /* Biểu đồ Vega/Altair: tăng độ rõ chữ SVG */
-    .vega-embed text {
-        font-size: 16px !important;
+    [data-testid="stAlert"] {
+        border: 2px solid #9ca3af !important;
+        color: #000000 !important;
+        font-size: 20px !important;
+        font-weight: 750 !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        background: #f9fafb !important;
+        border-right: 2px solid #d1d5db !important;
+    }
+
+    section[data-testid="stSidebar"] * {
+        font-size: 18px !important;
+        color: #000000 !important;
         font-weight: 700 !important;
-        fill: #000000 !important;
     }
-    .vega-embed .mark-text text {
-        font-size: 17px !important;
+
+    .footer-dhn {
+        font-size: 14px !important;
+        color: #000000 !important;
         font-weight: 800 !important;
+        background: #ffffff !important;
+        border-top: 2px solid #9ca3af !important;
     }
 
-    /* Ẩn bớt các thành phần Streamlit khi in/chụp minh chứng */
-    #MainMenu, header, [data-testid="stToolbar"], [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"], iframe[title="streamlit_app_widget"] {
-        visibility: hidden !important;
-        display: none !important;
-    }
-
-    /* Khi bấm Ctrl+P hoặc Save as PDF */
     @media print {
-        @page { size: A4 landscape; margin: 8mm; }
-        html, body, .stApp { background: #ffffff !important; }
-        .block-container { padding: 0 !important; max-width: 100% !important; }
-        section[data-testid="stSidebar"] {
-            background: #ffffff !important;
-            border-right: 1px solid #000000 !important;
+        html, body, .stApp {
+            background: white !important;
+            color: black !important;
+        }
+        .block-container {
+            max-width: 100% !important;
+            padding: 0.5rem 1rem 2rem 1rem !important;
         }
         h1 { font-size: 40px !important; }
         h2, h3 { font-size: 28px !important; }
-        [data-testid="stMetricValue"] { font-size: 40px !important; }
-        .footer-dhn { position: fixed !important; color: #000000 !important; }
+        p, span, label, div { color: black !important; }
+        button, input, [data-baseweb="select"] * { color: black !important; }
     }
     </style>
     """, unsafe_allow_html=True)
 
 inject_print_friendly_css()
-
 
 # ===================== TIỆN ÍCH CHUNG =====================
 def get_query_params():
@@ -368,7 +351,7 @@ def render_tab_gv():
                 qr = qrcode.make(qr_data)
                 buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
                 img = Image.open(buf)
-                qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=380)
+                qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=350)
 
                 if show_link:
                     with link_slot.container():
@@ -491,11 +474,7 @@ def render_tab_stats():
             )
             bars = base.mark_bar()
             text = base.mark_text(dy=-5).encode(text='Nhãn:N')
-            chart = (bars + text).properties(height=430).configure_axis(
-                labelFontSize=16, titleFontSize=18, labelFontWeight='bold', titleFontWeight='bold'
-            ).configure_legend(
-                labelFontSize=16, titleFontSize=18, labelFontWeight='bold', titleFontWeight='bold'
-            ).configure_title(fontSize=22, fontWeight='bold')
+            chart = (bars + text).properties(height=400)
             st.altair_chart(chart, use_container_width=True)
         else:
             st.info("Không có dữ liệu để vẽ biểu đồ.")
