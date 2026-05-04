@@ -33,151 +33,107 @@ VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
 
-# ===================== GIAO DIỆN IN ẤN / MINH CHỨNG =====================
-def inject_print_friendly_css():
-    st.markdown("""
-    <style>
-    :root {
-        --print-text: #000000;
-        --print-muted: #111827;
-        --print-border: #9ca3af;
-        --print-bg: #ffffff;
-    }
 
-    html, body, .stApp, [data-testid="stAppViewContainer"] {
-        background: var(--print-bg) !important;
-        color: var(--print-text) !important;
-        font-size: 20px !important;
-        line-height: 1.45 !important;
-    }
+# ====== CHẾ ĐỘ IN ĐẸP: CHỈ TĂNG ĐỘ RÕ GIAO DIỆN, KHÔNG ĐỤNG LOGIC ĐĂNG NHẬP ======
+st.markdown("""
+<style>
+/* Tăng độ rõ tổng thể */
+html, body, [class*="css"], .stApp {
+    font-size: 18px !important;
+    color: #000000 !important;
+}
 
-    .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 3.5rem !important;
-        max-width: 1180px !important;
-    }
+/* Tiêu đề chính và phụ */
+h1 {
+    font-size: 36px !important;
+    font-weight: 800 !important;
+    color: #000000 !important;
+}
+h2, h3 {
+    font-size: 26px !important;
+    font-weight: 800 !important;
+    color: #000000 !important;
+}
 
-    h1 {
-        font-size: 46px !important;
-        font-weight: 900 !important;
-        color: #000000 !important;
-        letter-spacing: -0.5px !important;
-    }
+/* Nhãn, caption, mô tả */
+label, p, span, div {
+    color: #000000 !important;
+}
+label {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
+small, [data-testid="stCaptionContainer"] {
+    font-size: 16px !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
+}
 
-    h2, h3 {
-        font-size: 32px !important;
-        font-weight: 850 !important;
-        color: #000000 !important;
-    }
+/* Ô nhập liệu */
+input, textarea {
+    font-size: 18px !important;
+    font-weight: 600 !important;
+    color: #000000 !important;
+}
 
-    p, span, label, div, small {
-        color: #000000 !important;
-    }
+/* Nút bấm */
+button {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
 
-    label, [data-testid="stWidgetLabel"] {
-        font-size: 20px !important;
-        font-weight: 800 !important;
-        color: #000000 !important;
-    }
+/* Metric thống kê */
+[data-testid="stMetricLabel"] {
+    font-size: 18px !important;
+    font-weight: 800 !important;
+    color: #000000 !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 38px !important;
+    font-weight: 900 !important;
+    color: #000000 !important;
+}
 
-    [data-testid="stCaptionContainer"], .stCaptionContainer {
-        font-size: 18px !important;
-        color: #111827 !important;
-        font-weight: 650 !important;
-    }
+/* Bảng dữ liệu */
+[data-testid="stDataFrame"], table {
+    font-size: 17px !important;
+    color: #000000 !important;
+}
 
-    input, textarea, select, button,
-    [data-baseweb="select"] *,
-    [data-testid="stTextInput"] *,
-    [data-testid="stSelectbox"] * {
-        font-size: 20px !important;
-        font-weight: 750 !important;
-        color: #000000 !important;
-    }
+/* Sidebar rõ hơn khi chụp hình */
+section[data-testid="stSidebar"] * {
+    font-size: 16px !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
+}
 
-    [data-baseweb="select"] > div,
-    [data-testid="stTextInput"] input {
-        background: #f3f4f6 !important;
-        border: 1.5px solid #9ca3af !important;
-    }
+/* Thông báo */
+[data-testid="stAlert"] {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+}
 
-    button {
-        border: 1.6px solid #9ca3af !important;
+/* Footer giữ rõ khi in/chụp */
+.footer-dhn {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+}
+
+/* Khi in hoặc chụp PDF */
+@media print {
+    html, body, .stApp {
         background: #ffffff !important;
-    }
-
-    [data-testid="stMetric"] {
-        background: #ffffff !important;
-        border: 2px solid #9ca3af !important;
-        border-radius: 14px !important;
-        padding: 18px !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.18) !important;
-    }
-
-    [data-testid="stMetricLabel"] div,
-    [data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        font-weight: 850 !important;
         color: #000000 !important;
     }
-
-    [data-testid="stMetricValue"] div,
-    [data-testid="stMetricValue"] {
-        font-size: 40px !important;
-        font-weight: 900 !important;
+    * {
         color: #000000 !important;
+        text-shadow: none !important;
+        box-shadow: none !important;
     }
-
-    [data-testid="stDataFrame"], table {
-        font-size: 18px !important;
-        color: #000000 !important;
-        font-weight: 650 !important;
-    }
-
-    [data-testid="stAlert"] {
-        border: 2px solid #9ca3af !important;
-        color: #000000 !important;
-        font-size: 20px !important;
-        font-weight: 750 !important;
-    }
-
-    section[data-testid="stSidebar"] {
-        background: #f9fafb !important;
-        border-right: 2px solid #d1d5db !important;
-    }
-
-    section[data-testid="stSidebar"] * {
-        font-size: 18px !important;
-        color: #000000 !important;
-        font-weight: 700 !important;
-    }
-
-    .footer-dhn {
-        font-size: 14px !important;
-        color: #000000 !important;
-        font-weight: 800 !important;
-        background: #ffffff !important;
-        border-top: 2px solid #9ca3af !important;
-    }
-
-    @media print {
-        html, body, .stApp {
-            background: white !important;
-            color: black !important;
-        }
-        .block-container {
-            max-width: 100% !important;
-            padding: 0.5rem 1rem 2rem 1rem !important;
-        }
-        h1 { font-size: 40px !important; }
-        h2, h3 { font-size: 28px !important; }
-        p, span, label, div { color: black !important; }
-        button, input, [data-baseweb="select"] * { color: black !important; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-inject_print_friendly_css()
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ===================== TIỆN ÍCH CHUNG =====================
 def get_query_params():
@@ -351,7 +307,7 @@ def render_tab_gv():
                 qr = qrcode.make(qr_data)
                 buf = io.BytesIO(); qr.save(buf, format="PNG"); buf.seek(0)
                 img = Image.open(buf)
-                qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=350)
+                qr_slot.image(img, caption="📱 Quét mã để điểm danh", width=360)
 
                 if show_link:
                     with link_slot.container():
@@ -474,7 +430,7 @@ def render_tab_stats():
             )
             bars = base.mark_bar()
             text = base.mark_text(dy=-5).encode(text='Nhãn:N')
-            chart = (bars + text).properties(height=400)
+            chart = (bars + text).properties(height=420)
             st.altair_chart(chart, use_container_width=True)
         else:
             st.info("Không có dữ liệu để vẽ biểu đồ.")
