@@ -20,107 +20,99 @@ import altair as alt
 # ===================== CẤU HÌNH CHUNG =====================
 QR_SLOT_SECONDS = 30          # đổi 1 chỗ cho toàn app (30 giây là khuyến nghị)
 UNLOCK_TTL = 120              # ân hạn phiên SV sau khi mở form (giây)
-MSSV_PREFIX = "51125"         # SV chỉ nhập 4 số cuối, hệ thống ghép tiền tố này
+MSSV_PREFIX = st.secrets.get("SESSION_PREFIX", "51125")  # đọc từ Secrets, không cần sửa Secrets
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo"  # Đổi nếu cần
+SHEET_KEY = st.secrets.get("SHEET_KEY", "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo")  # đọc từ Secrets, không cần sửa Secrets
 WORKSHEET_NAME = "D25C"                                     # Đổi nếu cần
 VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
-
-
-# ====== CHẾ ĐỘ IN ĐẸP: CHỈ TĂNG ĐỘ RÕ GIAO DIỆN, KHÔNG ĐỤNG LOGIC ĐĂNG NHẬP ======
+# ===================== GIAO DIỆN IN MINH CHỨNG =====================
+# Chỉ làm chữ to, đậm, rõ hơn khi chụp/in; không thay đổi logic, không thay đổi Secrets.
 st.markdown("""
 <style>
-/* Tăng độ rõ tổng thể */
-html, body, [class*="css"], .stApp {
+html, body, .stApp, [class*="css"] {
     font-size: 18px !important;
     color: #000000 !important;
 }
 
-/* Tiêu đề chính và phụ */
 h1 {
-    font-size: 36px !important;
-    font-weight: 800 !important;
-    color: #000000 !important;
-}
-h2, h3 {
-    font-size: 26px !important;
-    font-weight: 800 !important;
-    color: #000000 !important;
-}
-
-/* Nhãn, caption, mô tả */
-label, p, span, div {
-    color: #000000 !important;
-}
-label {
-    font-size: 18px !important;
-    font-weight: 700 !important;
-}
-small, [data-testid="stCaptionContainer"] {
-    font-size: 16px !important;
-    color: #000000 !important;
-    font-weight: 600 !important;
-}
-
-/* Ô nhập liệu */
-input, textarea {
-    font-size: 18px !important;
-    font-weight: 600 !important;
-    color: #000000 !important;
-}
-
-/* Nút bấm */
-button {
-    font-size: 18px !important;
-    font-weight: 700 !important;
-}
-
-/* Metric thống kê */
-[data-testid="stMetricLabel"] {
-    font-size: 18px !important;
-    font-weight: 800 !important;
-    color: #000000 !important;
-}
-[data-testid="stMetricValue"] {
     font-size: 38px !important;
     font-weight: 900 !important;
     color: #000000 !important;
 }
 
-/* Bảng dữ liệu */
+h2, h3 {
+    font-size: 28px !important;
+    font-weight: 900 !important;
+    color: #000000 !important;
+}
+
+p, span, div, label {
+    color: #000000 !important;
+}
+
+label {
+    font-size: 18px !important;
+    font-weight: 800 !important;
+}
+
+input, textarea {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+}
+
+button {
+    font-size: 18px !important;
+    font-weight: 800 !important;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 18px !important;
+    font-weight: 900 !important;
+    color: #000000 !important;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 40px !important;
+    font-weight: 900 !important;
+    color: #000000 !important;
+}
+
+[data-testid="stCaptionContainer"], small {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    color: #000000 !important;
+}
+
+[data-testid="stAlert"] {
+    font-size: 18px !important;
+    font-weight: 800 !important;
+}
+
 [data-testid="stDataFrame"], table {
     font-size: 17px !important;
     color: #000000 !important;
 }
 
-/* Sidebar rõ hơn khi chụp hình */
 section[data-testid="stSidebar"] * {
     font-size: 16px !important;
-    color: #000000 !important;
-    font-weight: 600 !important;
-}
-
-/* Thông báo */
-[data-testid="stAlert"] {
-    font-size: 18px !important;
     font-weight: 700 !important;
+    color: #000000 !important;
 }
 
-/* Footer giữ rõ khi in/chụp */
 .footer-dhn {
     font-size: 14px !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     color: #000000 !important;
 }
 
-/* Khi in hoặc chụp PDF */
 @media print {
     html, body, .stApp {
         background: #ffffff !important;
@@ -134,6 +126,7 @@ section[data-testid="stSidebar"] * {
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ===================== TIỆN ÍCH CHUNG =====================
 def get_query_params():
@@ -159,13 +152,17 @@ def attendance_flag(val) -> bool:
 
 # ===================== MẬT KHẨU GV (Secrets/ENV) =====================
 def _get_teacher_pw():
+    # Đọc đúng tên biến đang có trong Secrets của người dùng.
+    # Không yêu cầu đổi, thêm hoặc xóa bất kỳ dòng nào trong Secrets.
+    if "ADMIN_PASSWORD" in st.secrets:
+        return st.secrets["ADMIN_PASSWORD"]
     if "teacher_password" in st.secrets:
         return st.secrets["teacher_password"]
     if "google_service_account" in st.secrets:
         maybe = st.secrets["google_service_account"].get("teacher_password")
         if maybe:
             return maybe
-    return os.getenv("TEACHER_PASSWORD")
+    return os.getenv("ADMIN_PASSWORD") or os.getenv("TEACHER_PASSWORD")
 
 def gv_unlocked() -> bool:
     return bool(st.session_state.get("gv_unlocked"))
@@ -185,7 +182,7 @@ def render_gv_auth():
                     st.session_state["gv_unlocked"] = True
                     st.rerun()
                 else:
-                    st.warning("Sai mật khẩu hoặc chưa cấu hình `teacher_password` trong Secrets/ENV.")
+                    st.warning("Sai mật khẩu hoặc chưa cấu hình `ADMIN_PASSWORD` trong Secrets/ENV.")
 
 # ===================== KẾT NỐI GOOGLE SHEETS =====================
 @st.cache_resource
@@ -298,7 +295,7 @@ def render_tab_gv():
                 now = int(time.time())
                 slot = now // QR_SLOT_SECONDS
                 token = f"{slot}"
-                base_url = st.secrets["google_service_account"].get(
+                base_url = st.secrets.get("WRAPPER_URL") or st.secrets.get("APP_BASE_URL") or st.secrets.get("google_service_account", {}).get(
                     "app_base_url", "https://qrlecturer.streamlit.app"
                 )
                 qr_data = f"{base_url}/?sv=1&buoi={urllib.parse.quote(buoi)}&t={token}"
