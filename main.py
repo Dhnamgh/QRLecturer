@@ -20,20 +20,20 @@ import altair as alt
 # ===================== CẤU HÌNH CHUNG =====================
 QR_SLOT_SECONDS = 30          # đổi 1 chỗ cho toàn app (30 giây là khuyến nghị)
 UNLOCK_TTL = 120              # ân hạn phiên SV sau khi mở form (giây)
-MSSV_PREFIX = st.secrets.get("SESSION_PREFIX", "51125")  # đọc từ Secrets, không cần sửa Secrets
+MSSV_PREFIX = st.secrets.get("SESSION_PREFIX", "51125")  # đọc từ Secrets
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = st.secrets.get("SHEET_KEY", "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo")  # đọc từ Secrets, không cần sửa Secrets
+SHEET_KEY = st.secrets.get("SHEET_KEY", "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo")  # đọc từ Secrets 
 WORKSHEET_NAME = "D25C"                                     # Đổi nếu cần
 VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
 # ===================== GIAO DIỆN IN MINH CHỨNG =====================
-# Chỉ làm chữ to, đậm, rõ hơn khi chụp/in; không thay đổi logic, không thay đổi Secrets.
+# Chỉ làm chữ to, đậm, rõ hơn khi chụp/in
 st.markdown("""
 <style>
 html, body, .stApp, [class*="css"] {
@@ -153,7 +153,7 @@ def attendance_flag(val) -> bool:
 # ===================== MẬT KHẨU GV (Secrets/ENV) =====================
 def _get_teacher_pw():
     # Đọc đúng tên biến đang có trong Secrets của người dùng.
-    # Không yêu cầu đổi, thêm hoặc xóa bất kỳ dòng nào trong Secrets.
+   
     if "ADMIN_PASSWORD" in st.secrets:
         return st.secrets["ADMIN_PASSWORD"]
     if "teacher_password" in st.secrets:
@@ -456,14 +456,14 @@ def render_tab_stats():
         st.dataframe(table, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
-        st.caption("Gợi ý: đây thường là lỗi tạm thời của Google Sheets API. Bấm chạy lại sau vài giây hoặc kiểm tra Sheet có đang mở/sửa quá nhiều cùng lúc hay không.")
+        st.caption("đây là lỗi tạm thời của Google Sheets API")
 
-# ===== Trợ lý AI (nâng cấp) – chạy nội bộ, không dùng API ngoài =====
+# ===== Trợ lý AI – chạy nội bộ, không dùng API ngoài =====
 def render_tab_ai():
     import unicodedata, re, datetime
     from difflib import get_close_matches
 
-    st.subheader("🤖 Trợ lý AI (nội bộ, không dùng API ngoài)")
+    st.subheader("🤖 Trợ lý AI")
     st.caption(
         "Ví dụ: “Buổi 3 có bao nhiêu SV đi học?”, “Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
         "“Ai đi học sớm nhất buổi 2?”, “Ai đến muộn nhất buổi 4?”, "
@@ -902,7 +902,7 @@ elif menu == "📊 Thống kê":
 else:
     render_tab_ai()
 
-# ---------- FOOTER (bản quyền, căn giữa) ----------
+# ---------- FOOTER ----------
 st.markdown(
     """
     <style>
