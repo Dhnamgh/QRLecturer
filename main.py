@@ -26,7 +26,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-SHEET_KEY = st.secrets.get("SHEET_KEY", "1P7SOGsmb2KwBX50MU1Y1iVCYtjTiU7F7jLqgp6Bl8Bo")  # đọc từ Secrets 
+SHEET_KEY = st.secrets["SHEET_KEY"]  # đọc từ Secrets 
 WORKSHEET_NAME = "D25C"                                     # Đổi nếu cần
 VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 
