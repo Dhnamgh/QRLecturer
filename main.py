@@ -458,7 +458,7 @@ def render_tab_stats():
         st.error(f"❌ Lỗi khi lấy thống kê: {e}")
         st.caption("đây là lỗi tạm thời của Google Sheets API")
 
-# ===== Trợ lý AI – chạy nội bộ, không dùng API ngoài =====
+# ===== Hỗ trợ nhanh – chạy nội bộ, không dùng API ngoài =====
 def render_tab_ai():
     import unicodedata, re, datetime
     from difflib import get_close_matches
@@ -887,7 +887,7 @@ with st.sidebar:
     st.markdown("**📂 Điều hướng**")
     menu = st.radio(
         "Chọn mục",
-        options=["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Trợ lý AI"],
+        options=["👨‍🏫 Giảng viên (QR động)", "🔎 Tìm kiếm", "📊 Thống kê", "🤖 Hỗ trợ nhanh"],
         index=0,
         label_visibility="collapsed"
     )
