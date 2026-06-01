@@ -33,7 +33,7 @@ VN_TZ = datetime.timezone(datetime.timedelta(hours=7))
 st.set_page_config(page_title="QR Lecturer", layout="wide")
 
 # ===================== GIAO DIỆN IN MINH CHỨNG =====================
-# Chỉ làm chữ to, đậm, rõ hơn khi chụp/in
+# Làm chữ to, đậm, rõ khi chụp/in
 st.markdown("""
 <style>
 html, body, .stApp, [class*="css"] {
@@ -463,7 +463,7 @@ def render_tab_ai():
     import unicodedata, re, datetime
     from difflib import get_close_matches
 
-    st.subheader("🤖 Trợ lý AI")
+    st.subheader("🤖 Hỗ trợ nhanh")
     st.caption(
         "Ví dụ: “Buổi 3 có bao nhiêu SV đi học?”, “Tổ 2 buổi 5 có bao nhiêu SV có mặt?”, "
         "“Ai đi học sớm nhất buổi 2?”, “Ai đến muộn nhất buổi 4?”, "
